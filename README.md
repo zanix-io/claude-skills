@@ -1,16 +1,23 @@
 # Zanix - Claude Skills
 
 Reusable [Claude Code Skills](https://code.claude.com/docs/en/skills) for working across the Zanix
-ecosystem — backend libraries today, with room to grow into frontend, microapps, and microservice
+ecosystem — backend libraries and services today, with room to grow into frontend and microapp
 projects as they adopt Claude Code.
 
 ## What's here
 
-| Skill                    | Use it for                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| `complete-test-coverage` | Auditing and closing real test-coverage gaps in any stack (Deno, Node, Python, Go...) without wasting tokens on dead/unreachable code. |
-| `jsdoc-jsr-audit`        | Auditing existing JSDoc for accuracy (not just presence) and driving `deno doc --lint` to zero in Deno/JSR packages. |
-| `docs-readme-audit`      | Making a Deno/JSR package's README, `docs/`, and CHANGELOG complete, coherent, and professional in one exhaustive pass. |
+| Skill                        | Use it for                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| `complete-test-coverage`     | Auditing and closing real test-coverage gaps in any stack (Deno, Node, Python, Go...) without wasting tokens on dead/unreachable code. |
+| `jsdoc-jsr-audit`            | Auditing existing JSDoc for accuracy (not just presence) and driving `deno doc --lint` to zero in Deno/JSR **packages**. |
+| `docs-readme-audit`          | Making a Deno/JSR **package**'s README, `docs/`, and CHANGELOG complete, coherent, and professional in one exhaustive pass. |
+| `zanix-server-conventions`   | Writing/reviewing **application** code on top of `@zanix/server` (handlers, interactors, providers, middlewares, sockets, jobs), grounded in real production Zanix microservices. |
+
+`jsdoc-jsr-audit` and `docs-readme-audit` are scoped to publishable **libraries** (anything with a
+`deno.json(c)` `"exports"` field) — they don't apply to a deployed app/microservice that isn't
+published as a package. `complete-test-coverage` and `zanix-server-conventions` aren't library-only:
+the former works on any project with tests, the latter on any app consuming `@zanix/server`,
+published or not.
 
 Each skill is self-contained in its own `SKILL.md` under `.claude/skills/<name>/`, distilled from
 real, hands-on sessions — not written speculatively. They encode what actually needed fixing, what
