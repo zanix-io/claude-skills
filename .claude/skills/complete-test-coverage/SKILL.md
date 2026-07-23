@@ -1,256 +1,233 @@
 ---
 name: complete-test-coverage
-description: Audita y completa la cobertura de tests de un proyecto de forma exhaustiva pero eficiente en tokens — detecta archivos invisibles, ramas escondidas dentro de líneas "cubiertas", código muerto que en realidad es un bug, y clasifica cada gap antes de escribir nada. Úsalo cuando te pidan mejorar/completar cobertura de tests en cualquier stack (Deno, Node, Python, Go, etc.).
+description: Audits and completes a project's test coverage thoroughly but token-efficiently — detects invisible files, branches hidden inside "covered" lines, dead code that's actually a bug, and classifies every gap before writing anything. Use it when asked to improve/complete test coverage in any stack (Deno, Node, Python, Go, etc.).
 ---
 
-Úsalo como prompt inicial en cualquier proyecto con test suite existente. Sustituye
-`<runtime>` por el gestor real (`deno test`, `npm test`/`jest`, `pytest`, `go test`, etc.)
-y `<coverage-tool>` por su equivalente de cobertura.
+Use this as the initial prompt in any project with an existing test suite. Replace
+`<runtime>` with the real test runner (`deno test`, `npm test`/`jest`, `pytest`, `go test`, etc.)
+and `<coverage-tool>` with its coverage equivalent.
 
 ---
 
-## Objetivo
+## Goal
 
-Completar la cobertura de tests del proyecto de forma **exhaustiva pero eficiente en
-tokens**, apuntando al mejor puntaje de cobertura real posible: encontrar TODOS los gaps
-reales (incluidos los invisibles y los que se esconden dentro de líneas ya "cubiertas"),
-descartar los que no son gaps de verdad, y cerrar solo los que aportan señal real — sin
-volcar tablas de cobertura completas en el chat en cada paso ni releer archivos
-innecesariamente.
+Complete the project's test coverage **thoroughly but token-efficiently**, aiming for the best
+realistically achievable coverage score: find ALL real gaps (including the invisible ones and the
+ones hiding inside lines that already look "covered"), discard the ones that aren't real gaps, and
+close only the ones that add real signal — without dumping full coverage tables into the chat at
+every step or re-reading files unnecessarily.
 
-**"Mejor puntaje posible" no significa 100% a cualquier costo.** Significa: ningún gap
-real se queda sin cerrar por pereza o por confiar en un reporte engañoso, pero el código
-muerto, el defensivo-inalcanzable y el que requiere infraestructura viva sin punto de
-inyección siguen quedando fuera de alcance (Fase 2) — perseguirlos igual sería el
-desperdicio de tokens que esta auditoría existe para evitar. La diferencia frente a una
-pasada superficial es que aquí no se declara "listo" hasta que el número que queda sin
-cerrar está explícitamente justificado línea por línea, no simplemente redondeado.
+**"Best possible score" doesn't mean 100% at any cost.** It means: no real gap is left unclosed out
+of laziness or because a misleading report was trusted, but dead code, unreachable defensive code,
+and code that requires live infrastructure with no injection point still stay out of scope (Phase
+2) — chasing those anyway would be exactly the kind of token waste this audit exists to prevent.
+The difference versus a shallow pass is that here you don't declare "done" until the number that's
+left unclosed is explicitly justified line by line, not just rounded off.
 
-## Regla de oro (ahorro de tokens)
+## Golden rule (token savings)
 
-- Analiza en bloque, no interactivo. Corre el suite completo con cobertura UNA vez,
-  extrae el detalle a un archivo temporal, y haz todo el triage sobre ese archivo con
-  `grep`/`sed`/scripts cortos — no repitas la corrida completa después de cada test
-  individual. Corre archivos individuales solo para iterar rápido en algo puntual, y
-  reserva la corrida completa para: (a) el diagnóstico inicial, (b) checkpoints cada
-  ~5-8 archivos nuevos, (c) la verificación final.
-- No pegues tablas de cobertura completas en el chat. Resume: "N archivos al 100%,
-  quedan estos M con esta razón concreta". Detalle solo si el usuario lo pide.
-- No repitas explicaciones ya dadas. Si ya se estableció que "branch % en la tabla
-  resumen puede ser artefacto, la fuente de verdad es el dato de branch crudo (Fase
-  0.4), no el `--detailed` por línea ni el resumen agregado", no lo reexpliques cada
-  vez — aplícalo.
-- No confíes en que un test "pasó" implica que cerró la cobertura que buscabas. Si el
-  test usa un helper que reconstruye/clona la función bajo prueba (ver Fase 3), puede
-  pasar perfectamente y no mover un solo bit del reporte del archivo original. Verifica
-  el dato de cobertura después de escribir el test, no solo el resultado del test.
-- Antes de escribir un test, clasifica el gap (ver Fase 2). Los "no reales" no se
-  escriben — se reportan en una línea y se avanza. Perseguir 100% en código muerto es
-  el mayor desperdicio de tokens posible en esta tarea.
+- Analyze in bulk, not interactively. Run the full suite with coverage ONCE, extract the detail to
+  a temp file, and do all the triage against that file with `grep`/`sed`/short scripts — don't
+  re-run the full suite after every individual test. Run individual files only to iterate quickly
+  on something specific, and reserve the full run for: (a) the initial diagnosis, (b) checkpoints
+  every ~5-8 new files, (c) the final verification.
+- Don't paste full coverage tables into the chat. Summarize: "N files at 100%, these M remain for
+  this specific reason." Give detail only if the user asks for it.
+- Don't repeat explanations already given. If it's already been established that "the branch % in
+  the summary table can be an artifact, the source of truth is the raw branch data (Phase 0.4), not
+  the per-line `--detailed` report nor the aggregated summary," don't re-explain it every time —
+  just apply it.
+- Don't trust that a test "passing" means it closed the coverage gap you were after. If the test
+  uses a helper that rebuilds/clones the function under test (see Phase 3), it can pass perfectly
+  and not move a single bit in the original file's report. Verify the coverage data after writing
+  the test, not just the test result.
+- Before writing a test, classify the gap (see Phase 2). The "not real" ones don't get written —
+  report them in one line and move on. Chasing 100% on dead code is the single biggest waste of
+  tokens possible in this task.
 
-## Fase 0 — Punto de partida y detección de puntos ciegos
+## Phase 0 — Starting point and blind-spot detection
 
-1. Corre el suite completo con cobertura:
-   `rm -rf coverage && <runtime> --coverage=coverage` (o equivalente del stack).
-2. **Detecta archivos invisibles.** Un reporte de cobertura solo lista archivos que
-   ALGÚN test cargó. Si nada importa un archivo, no aparece — ni siquiera como 0%.
-   Compara el árbol completo de código fuente contra la unión de archivos que
-   aparecen en los datos crudos de cobertura:
+1. Run the full suite with coverage:
+   `rm -rf coverage && <runtime> --coverage=coverage` (or the stack's equivalent).
+2. **Detect invisible files.** A coverage report only lists files that SOME test loaded. If nothing
+   imports a file, it doesn't appear — not even as 0%. Compare the full source tree against the
+   union of files that appear in the raw coverage data:
    ```
    find src -name "*.ext" -not -path "*/tests/*" | sort > /tmp/all_src.txt
-   # extraer urls/paths únicos de los datos crudos de cobertura (json/lcov/etc.)
+   # extract unique urls/paths from the raw coverage data (json/lcov/etc.)
    comm -23 /tmp/all_src.txt /tmp/covered_src.txt
    ```
-   Excluye archivos de solo-tipos/interfaces sin código ejecutable (no aplican).
-   Cualquier archivo real que quede en la diferencia es un **gap total** — trátalo
-   con prioridad máxima, son los más baratos de encontrar y los que más se esconden.
-3. Antes de confiar en el % de "branch" de la tabla resumen: si el mismo módulo se
-   carga en muchos archivos de test aislados (contenedores/singletons compartidos),
-   esa columna puede no reflejar la unión real de ramas cubiertas. Verifica con el
-   reporte detallado por línea (`<coverage-tool> --detailed` o equivalente) antes de
-   escribir un test para "cerrar" un % de branch — puede que la línea ya esté al 100%
-   y el número sea ruido de agregación entre instancias de módulo aisladas.
-4. **El reporte "por línea" no es suficiente para branch — es necesario pero no
-   suficiente.** Un archivo puede marcar 100% de línea y seguir teniendo ramas al 0%,
-   porque una línea "cubierta" puede contener una sub-rama que nunca se ejecutó:
-   ternarios (`a ? b : c`), `||`/`??` de fallback, encadenamiento opcional (`?.`),
-   parámetros con valor por defecto, y la selección de rama dentro de un factory
-   (`if (options.each) {...} else {...}`) cuando solo se probó una de las dos opciones.
-   Antes de declarar un archivo "cerrado", extrae el dato de branch crudo (no el
-   resumen agregado) y confírmalo contra el código fuente:
+   Exclude type-only/interface files with no executable code (they don't apply). Any real file left
+   in the diff is a **total gap** — treat it with maximum priority, these are the cheapest to find
+   and the ones that hide the most.
+3. Before trusting the "branch" % in the summary table: if the same module gets loaded across many
+   isolated test files (shared containers/singletons), that column may not reflect the real union
+   of covered branches. Verify against the detailed per-line report (`<coverage-tool> --detailed` or
+   equivalent) before writing a test to "close" a branch % — the line might already be at 100% and
+   the number might just be aggregation noise across isolated module instances.
+4. **The "per-line" report is not enough for branches — it's necessary but not sufficient.** A file
+   can show 100% line coverage and still have branches at 0%, because a "covered" line can contain
+   a sub-branch that never executed: ternaries (`a ? b : c`), `||`/`??` fallbacks, optional chaining
+   (`?.`), default parameter values, and branch selection inside a factory
+   (`if (options.each) {...} else {...}`) when only one of the two options was ever tested. Before
+   declaring a file "closed," extract the raw branch data (not the aggregated summary) and confirm
+   it against the source:
    ```
-   # lcov: cada línea BRDA:<line>,<block>,<branch>,<hits> — hits=0 es la rama sin cubrir
-   awk '/^SF:.*ruta\/al\/archivo\.ts/{f=1} f&&/^BRDA:/{print} f&&/^end_of_record/{f=0}' coverage/lcov.info
+   # lcov: each BRDA:<line>,<block>,<branch>,<hits> line — hits=0 is the uncovered branch
+   awk '/^SF:.*path\/to\/file\.ts/{f=1} f&&/^BRDA:/{print} f&&/^end_of_record/{f=0}' coverage/lcov.info
    ```
-   (para otros formatos de cobertura, busca el equivalente — istanbul/json expone
-   `branchMap`+`b` por statement, go tiene `-covermode=count` por bloque, etc.)
-   Si una rama sigue en 0 a pesar de que la línea está "verde", trátala como el resto
-   de los gaps: clasifícala en Fase 2 antes de decidir si se cierra o se descarta.
+   (for other coverage formats, look for the equivalent — istanbul/json exposes `branchMap`+`b` per
+   statement, go has `-covermode=count` per block, etc.)
+   If a branch is still at 0 despite the line being "green," treat it like any other gap: classify
+   it in Phase 2 before deciding whether to close it or discard it.
 
-## Fase 1 — Priorización
+## Phase 1 — Prioritization
 
-Ordena los gaps encontrados por impacto, no por archivo:
-1. Archivos completamente invisibles (Fase 0.2) — máxima prioridad.
-2. Cachés/guards que nunca se cumplen (Fase 2, "código muerto que en realidad es un
-   bug") — el hallazgo más valioso posible en esta auditoría, revísalo antes que nada
-   apenas lo detectes.
-3. Lógica de negocio real sin cubrir (cálculos, validaciones, ramas de error con
-   comportamiento distinto).
-4. Registro/DI/decoradores: rama de "clase inválida", opciones por defecto,
-   short-circuit de guards/middlewares, selección de rama por opciones dentro de un
-   factory (aunque esté "escondida" dentro de una línea con line% 100, ver Fase 0.4).
-5. Fallbacks de una línea (`||`, `??`, ternarios anidados, callbacks por defecto) en
-   código real.
-6. Todo lo demás (branches triviales, catch-ignore de infraestructura).
+Order the gaps found by impact, not by file:
+1. Completely invisible files (Phase 0.2) — top priority.
+2. Caches/guards that never trigger (Phase 2, "dead code that's actually a bug") — the single most
+   valuable finding possible in this audit, look into it before anything else as soon as you spot
+   it.
+3. Real uncovered business logic (calculations, validations, error branches with distinct
+   behavior).
+4. Registration/DI/decorators: "invalid class" branch, default options, guard/middleware
+   short-circuits, option-driven branch selection inside a factory (even if it's "hidden" inside a
+   line at 100% line%, see Phase 0.4).
+5. One-line fallbacks (`||`, `??`, nested ternaries, default callbacks) in real code.
+6. Everything else (trivial branches, infrastructure catch-and-ignore).
 
-## Fase 2 — Triage por gap (clasifica ANTES de escribir nada)
+## Phase 2 — Triage per gap (classify BEFORE writing anything)
 
-Para cada línea/rama sin cubrir, decide en una frase:
+For each uncovered line/branch, decide in one sentence:
 
-- **Gap real y aislado** → escribe un test unitario, sin tocar fixtures compartidos.
-- **Código muerto por diseño** (el chequeo nunca puede ser cierto dado cómo se llama
-  hoy, p.ej. un check sobre un ID recién generado al azar, o una constante hardcodeada
-  donde antes había una config) → NO escribas un test para forzarlo. Repórtalo como
-  hallazgo y pregunta si se elimina o se refactoriza para que sea alcanzable (a veces
-  la corrección correcta es exponer un parámetro opcional que le dé sentido real al
-  chequeo, no solo borrarlo — evalúa ambas).
-- **Código "muerto" que en realidad es un BUG** — antes de archivar una rama como
-  código muerto, pregúntate: *¿esta rama debería dispararse en el uso normal y no lo
-  hace por un error de implementación?* Señal típica: una caché/memoización o un guard
-  (`if (cache?.key === x) return cache`) que nunca se cumple ni siquiera llamando dos
-  veces con los mismos argumentos — revisa si el valor se está comparando contra la
-  variable equivocada, o si falta la asignación que debería poblar la caché antes del
-  `return`. Si encuentras esto, es un hallazgo de mayor severidad que un gap de test:
-  repórtalo aparte y pregunta antes de tocar código de producción (el fix suele ser
-  una línea, pero es un cambio de comportamiento real, no solo de tests).
-- **Dependiente de entorno real** (lee un archivo de config real, usa un valor cacheado
-  a nivel de módulo) → antes de descartarlo, revisa si:
-  - la función memoiza en el primer llamado → puedes mockear la primitiva de bajo
-    nivel (lectura de archivo, fetch, etc.) ANTES de esa primera llamada, en un
-    archivo de test aislado dedicado solo a esa rama.
-  - acepta un parámetro opcional de override que el código que la envuelve no expone
-    — en ese caso sí es un gap real, solo hace falta pasar por la capa correcta.
-  - el fallback que quieres forzar (p.ej. "usa la ruta/cwd por defecto") escribiría o
-    leería sobre una ubicación real del proyecto si el entorno real coincide por
-    accidente con esa ruta por defecto → nunca lo asumas seguro implícitamente. Redirige
-    explícitamente CUALQUIER parámetro de escritura/ubicación a una carpeta temporal y
-    usa el stub de entorno (`cwd`, primitiva de red, etc.) solo para decidir la rama, no
-    para el efecto colateral. Verifica al terminar con `git status`/diff que no se tocó
-    nada fuera de la carpeta temporal.
-- **Requiere infraestructura viva** (socket real, servidor real, conexión de red) →
-  no lo fuerces con mocks frágiles. Es aceptable dejarlo sin cobertura unitaria si ya
-  existe una prueba de integración/e2e real que lo ejercita, aunque sea parcialmente.
-  Prioriza reutilizar esa infraestructura real (llamar dos veces al wrapper público con
-  una variación mínima de opciones) antes de construir un mock nuevo — es más barato y
-  más confiable. Nunca fuerces el fallo de un comando/servicio externo manipulando
-  variables de entorno globales del proceso (`PATH`, etc.): no está aislado por test y
-  el riesgo de romper otros tests o el propio proceso supera el valor de la rama.
-- **Manejo de errores defensivo que nunca debe dispararse** (try/catch envolviendo un
-  bootstrap completo, ignorar-y-loguear) → no vale la pena forzar el catch; forzarlo
-  suele requerir romper deliberadamente el flujo feliz de todo lo que envuelve.
-- **Unidad de cobertura escondida dentro de una línea "cubierta"** (ver Fase 0.4):
-  parámetro con callback por defecto (`function f(cb = (x) => x)`), rama de un factory
-  seleccionada por opciones (`each`, `optional`, etc.), fallback `||`/`??`/`?.` — estas
-  SÍ son gaps reales casi siempre (no son "triviales" solo por ser cortas) y suelen ser
-  las más baratas de cerrar una vez identificadas. Clasifícalas igual que cualquier otra
-  antes de decidir, pero por defecto tratarlas como cerrables.
+- **Real, isolated gap** → write a unit test, without touching shared fixtures.
+- **Dead code by design** (the check can never be true given how it's called today, e.g. a check
+  against a freshly-generated random ID, or a hardcoded constant where a config used to be) → do
+  NOT write a test to force it. Report it as a finding and ask whether it should be removed or
+  refactored to become reachable (sometimes the right fix is exposing an optional parameter that
+  gives the check real meaning, not just deleting it — consider both).
+- **"Dead" code that's actually a BUG** — before filing a branch away as dead code, ask yourself:
+  *should this branch trigger under normal use and it doesn't because of an implementation error?*
+  Typical signal: a cache/memoization or guard (`if (cache?.key === x) return cache`) that never
+  matches even when called twice with the same arguments — check whether the value is being
+  compared against the wrong variable, or whether the assignment that should populate the cache
+  before the `return` is missing. If you find this, it's a more severe finding than a test gap:
+  report it separately and ask before touching production code (the fix is usually one line, but
+  it's a real behavior change, not just a test change).
+- **Depends on real environment** (reads a real config file, uses a module-level cached value) →
+  before discarding it, check whether:
+  - the function memoizes on first call → you can mock the low-level primitive (file read, fetch,
+    etc.) BEFORE that first call, in a dedicated isolated test file for just that branch.
+  - it accepts an optional override parameter that the wrapping code doesn't expose — in that case
+    it IS a real gap, it just needs to go through the right layer.
+  - the fallback you want to force (e.g. "use the default path/cwd") would write to or read from a
+    real project location if the real environment happens to match that default path by accident →
+    never assume that's implicitly safe. Explicitly redirect ANY write/location parameter to a temp
+    folder and use the environment stub (`cwd`, network primitive, etc.) only to decide the branch,
+    not for the side effect. Verify at the end with `git status`/diff that nothing outside the temp
+    folder was touched.
+- **Requires live infrastructure** (real socket, real server, network connection) → don't force it
+  with fragile mocks. It's acceptable to leave it without unit coverage if a real integration/e2e
+  test already exercises it, even partially. Prioritize reusing that real infrastructure (calling
+  the public wrapper twice with a minimal options variation) over building a new mock — it's
+  cheaper and more reliable. Never force an external command/service to fail by manipulating global
+  process environment variables (`PATH`, etc.): it's not test-isolated and the risk of breaking
+  other tests or the process itself outweighs the value of the branch.
+- **Defensive error handling that should never trigger** (try/catch wrapping a full bootstrap,
+  ignore-and-log) → not worth forcing the catch; forcing it usually requires deliberately breaking
+  the happy path of everything it wraps.
+- **Coverage unit hidden inside a "covered" line** (see Phase 0.4): a parameter with a default
+  callback (`function f(cb = (x) => x)`), a factory branch selected by options (`each`, `optional`,
+  etc.), a `||`/`??`/`?.` fallback — these ARE real gaps almost always (they're not "trivial" just
+  because they're short) and tend to be the cheapest to close once identified. Classify them like
+  any other before deciding, but default to treating them as closeable.
 
-## Fase 3 — Patrones de test (aprendidos, aplican a la mayoría de stacks)
+## Phase 3 — Test patterns (learned, apply to most stacks)
 
-- **Aislamiento entre archivos de test**: si el runtime aísla cada archivo de test
-  (proceso/worker/módulo fresco por archivo — verifícalo una vez para el stack en
-  cuestión), puedes mockear globals (`fetch`, reloj, FS) libremente en un archivo
-  dedicado sin miedo a filtrar el mock a otros archivos. Documenta el hallazgo si no
-  es obvio, porque cambia todo el approach de mocking. Verificación rápida y barata
-  (dos archivos desechables, córrelos juntos y borra):
+- **Isolation between test files**: if the runtime isolates each test file (process/worker/fresh
+  module per file — verify this once for the stack at hand), you can freely mock globals (`fetch`,
+  clock, FS) in a dedicated file without fear of leaking the mock into other files. Document the
+  finding if it's not obvious, because it changes the whole mocking approach. Quick, cheap
+  verification (two throwaway files, run them together and delete):
   ```
-  # a.test.ts: setea un global. b.test.ts: lee ese mismo global.
-  # Si b lo ve undefined, el runtime aísla por archivo — mockea con confianza.
+  # a.test.ts: sets a global. b.test.ts: reads that same global.
+  # If b sees it as undefined, the runtime isolates per file — mock with confidence.
   ```
-- **Los helpers de test que reconstruyen la función bajo prueba NO cuentan para la
-  cobertura del archivo original.** Cualquier utilidad que tome una función y genere
-  una nueva a partir de su código fuente (`new Function(...)`, `eval`, stringify +
-  reemplazo de identificadores — el patrón típico de un helper "mockWrap"/"rewire"
-  hecho a mano) crea un objeto de función distinto al que el instrumentador de
-  cobertura registró. El test puede pasar perfectamente contra ese clon y la línea
-  original del archivo se queda en rojo. Detéctalo así: si escribiste un test con ese
-  tipo de helper y la línea/rama que buscabas cerrar sigue en 0 después de correrlo,
-  cambia de técnica — stub real de la primitiva de bajo nivel (`stub(Deno, 'cwd', ...)`,
-  `stub(globalThis, 'fetch', ...)`, etc.) o llamada directa a la función real con los
-  argumentos que fuercen la rama, nunca el helper que clona código.
-- **Los factories/decoradores ejecutan la selección de rama al invocarse, no al
-  usarse después.** Un patrón como `function Decorator(options) { if (options.each)
-  {...} else {...}; return definirComportamiento(...) }` corre su `if/else` en el
-  momento en que se llama `Decorator(...)` — típicamente al declarar la clase/objeto
-  que lo usa — no cuando el valor decorado se valida o ejecuta más adelante. Aprovecha
-  esto: para cerrar cada combinación de opciones basta con invocar el factory con esa
-  combinación (p.ej. una clase de fixture con una propiedad por combinación); no hace
-  falta disparar el flujo de validación/ejecución completo solo para la cobertura,
-  aunque sigue valiendo la pena un caso end-to-end real (uno positivo y uno negativo)
-  que confirme el comportamiento, no solo la cobertura.
-- **Los callbacks/parámetros con valor por defecto son una unidad de cobertura aparte.**
-  `function f(cb = (x) => x) {...}` — si todos los tests pasan su propio `cb`, esa
-  función identidad por defecto se queda en 0% de function-coverage aunque `f` esté al
-  100%. Para cerrarla, añade un caso que invoque `f` sin ese argumento opcional.
-- **Decoradores/registro DI**: para cubrir "clase inválida" o "opciones por defecto",
-  no necesitas levantar todo el framework — invoca el decorador como función plana
-  contra una clase mínima y verifica el efecto (excepción esperada, o el objeto de
-  configuración que termina registrándose vía spy sobre el método real del
-  contenedor/registro).
-- **Guards/middlewares que cortan el flujo**: regístralos con la API pública real del
-  framework (no mockees el contenedor entero) y luego invoca el punto de entrada
-  exportado directamente con un contexto mínimo simulado. Evita tocar fixtures
-  compartidas por varios tests — usa clases y registros nuevos, locales al test.
-- **No puedes reasignar exports nombrados de función** (bindings ESM de solo lectura).
-  Sí puedes reasignar métodos de objetos/clases (útil para spy/stub manual con
-  guardar-original + restaurar en `finally`, o con el helper `spy`/`stub` del
-  framework de test si existe).
-- **Seguridad al forzar una rama de fallback "usa el valor/ubicación por defecto":**
-  nunca dejes que el efecto colateral de ese fallback caiga en una ruta real del
-  proyecto por accidente. Patrón seguro: stubea solo la primitiva que decide la rama
-  (`cwd`, resolución de config, fetch) y pasa explícitamente cualquier parámetro de
-  escritura/lectura de archivos a una carpeta temporal — así el resultado de la rama
-  nunca depende de que el entorno real coincida "por suerte" con algo seguro. Cierra
-  cada test de este tipo con `try/finally` restaurando el stub y borrando la carpeta
-  temporal, y al terminar el lote corre `git status`/diff para confirmar que ningún
-  archivo real del repo cambió.
-- **Confía en la corrida real del compilador/test runner por encima de cualquier
-  diagnóstico de IDE/LSP en vivo** si contradicen al resultado real — en esta sesión
-  los diagnósticos en vivo fueron ocasionalmente inconsistentes con el archivo real.
+- **Test helpers that rebuild the function under test do NOT count toward the original file's
+  coverage.** Any utility that takes a function and generates a new one from its source code
+  (`new Function(...)`, `eval`, stringify + identifier replacement — the typical hand-rolled
+  "mockWrap"/"rewire" helper pattern) creates a function object distinct from the one the coverage
+  instrumenter registered. The test can pass perfectly against that clone while the original file's
+  line stays red. Detect it like this: if you wrote a test using that kind of helper and the
+  line/branch you were trying to close is still at 0 after running it, switch technique — a real
+  stub of the low-level primitive (`stub(Deno, 'cwd', ...)`, `stub(globalThis, 'fetch', ...)`,
+  etc.) or a direct call to the real function with the arguments that force the branch, never the
+  helper that clones code.
+- **Factories/decorators run branch selection when invoked, not when used later.** A pattern like
+  `function Decorator(options) { if (options.each) {...} else {...}; return
+  defineBehavior(...) }` runs its `if/else` the moment `Decorator(...)` is called — typically when
+  declaring the class/object that uses it — not when the decorated value is validated or executed
+  later. Use this: to close each option combination it's enough to invoke the factory with that
+  combination (e.g. a fixture class with one property per combination); you don't need to trigger
+  the full validation/execution flow just for coverage, though a real end-to-end case (one positive,
+  one negative) confirming the actual behavior — not just coverage — is still worthwhile.
+- **Callbacks/parameters with a default value are a separate coverage unit.**
+  `function f(cb = (x) => x) {...}` — if every test passes its own `cb`, that default identity
+  function stays at 0% function-coverage even if `f` is at 100%. To close it, add a case that
+  invokes `f` without that optional argument.
+- **Decorators/DI registration**: to cover "invalid class" or "default options," you don't need to
+  spin up the whole framework — invoke the decorator as a plain function against a minimal class
+  and verify the effect (expected exception, or the config object that ends up registered via a spy
+  on the real container/registry method).
+- **Guards/middlewares that short-circuit the flow**: register them with the framework's real
+  public API (don't mock the whole container) and then invoke the exported entry point directly
+  with a minimal simulated context. Avoid touching fixtures shared across several tests — use
+  classes and registrations that are new and local to the test.
+- **You can't reassign named function exports** (read-only ESM bindings). You CAN reassign
+  object/class methods (useful for manual spy/stub with save-original + restore in `finally`, or
+  with the test framework's `spy`/`stub` helper if one exists).
+- **Safety when forcing a "use the default value/location" fallback branch:** never let that
+  fallback's side effect land on a real project path by accident. Safe pattern: stub only the
+  primitive that decides the branch (`cwd`, config resolution, fetch) and explicitly pass any
+  file read/write parameter to a temp folder — that way the branch's outcome never depends on the
+  real environment "luckily" matching something safe. Close every test of this kind with
+  `try/finally` restoring the stub and deleting the temp folder, and at the end of the batch run
+  `git status`/diff to confirm no real repo file changed.
+- **Trust the actual compiler/test-runner run over any live IDE/LSP diagnostic** when they
+  contradict the real result — in the sessions this was learned from, live diagnostics were
+  occasionally inconsistent with the real file.
 
-## Fase 4 — Verificación
+## Phase 4 — Verification
 
-- Por archivo nuevo: corre solo ese archivo (rápido) y confirma con el dato de branch
-  crudo (Fase 0.4) que la rama que buscabas quedó en verde — no asumas por el "ok" del
-  test. Luego formatter + linter si el proyecto los tiene configurados como gate.
-- Cada 5-8 archivos, o al terminar un lote temático: corrida completa + cobertura, y
-  repite el diff de Fase 0.2 para confirmar que no quedó ningún archivo invisible.
-- Si tocaste código de producción (fix de un bug encontrado en Fase 2), corre el
-  suite completo antes y después del fix para confirmar que nada que dependía del
-  comportamiento roto se quiebra.
-- Antes de declarar terminado: vuelve a extraer el listado de archivos por debajo del
-  umbral "verde" del proyecto (no solo mirar el resumen coloreado — usa el mismo dato
-  crudo de Fase 0.4) y confirma que cada uno que sigue ahí tiene una razón de Fase 2
-  explícita, no que simplemente se dejó de revisar. Si algo bajó de puntaje respecto a
-  una corrida anterior, no asumas regresión de inmediato — primero verifica si ese
-  archivo simplemente no había sido triado a nivel de branch todavía (ver Fase 0.4).
-- Si el entorno lo permite, corre `git status`/diff de los archivos que NO son de test
-  ni de docs, para confirmar que ningún fallback forzado escribió sobre algo real.
-- Al final: una corrida completa, un resumen de números antes/después, y una lista
-  corta de lo que quedó fuera con la razón (una línea por ítem, no un ensayo).
+- Per new file: run just that file (fast) and confirm with the raw branch data (Phase 0.4) that the
+  branch you were after came out green — don't assume it from the test's "ok." Then formatter +
+  linter if the project has them configured as a gate.
+- Every 5-8 files, or after finishing a themed batch: full run + coverage, and repeat the Phase 0.2
+  diff to confirm no file is still invisible.
+- If you touched production code (fixing a bug found in Phase 2), run the full suite before and
+  after the fix to confirm nothing that depended on the broken behavior breaks.
+- Before declaring done: re-extract the list of files below the project's "green" threshold (don't
+  just look at the colored summary — use the same raw data from Phase 0.4) and confirm each one
+  still there has an explicit Phase 2 reason, not that it was simply not reviewed. If something
+  dropped in score versus a previous run, don't assume a regression right away — first check
+  whether that file simply hadn't been triaged at the branch level yet (see Phase 0.4).
+- If the environment allows it, run `git status`/diff on files that are NOT test or doc files, to
+  confirm no forced fallback wrote over something real.
+- At the end: one full run, a before/after numbers summary, and a short list of what was left out
+  with the reason (one line per item, not an essay).
 
-## Formato de reporte esperado (para no gastar tokens narrando)
+## Expected report format (to avoid wasting tokens narrating)
 
 ```
-Cobertura: X% branch / Y% función / Z% línea (antes: X0/Y0/Z0)
-N tests nuevos, M total, todos pasando.
+Coverage: X% branch / Y% function / Z% line (before: X0/Y0/Z0)
+N new tests, M total, all passing.
 
-Bugs encontrados vía cobertura (si los hay — reportar aparte, no como gap de test):
-- archivo.ts:línea — <qué rama debería dispararse y por qué no lo hace>. ¿Corrijo?
+Bugs found via coverage (if any — report separately, not as a test gap):
+- file.ts:line — <which branch should trigger and why it doesn't>. Should I fix it?
 
-Cerrado:
-- archivo.ts: <qué rama/gap se cerró en una frase>
+Closed:
+- file.ts: <what branch/gap was closed, in one sentence>
 
-Fuera de alcance (con razón):
-- archivo.ts:línea — <código muerto | requiere infra viva | env-dependiente sin punto de inyección>
+Out of scope (with reason):
+- file.ts:line — <dead code | requires live infra | env-dependent with no injection point>
 ```

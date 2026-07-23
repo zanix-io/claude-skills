@@ -1,156 +1,156 @@
 ---
 name: jsdoc-jsr-audit
-description: Audita la precisión del JSDoc existente (no solo cobertura) y baja a cero los errores de "deno doc --lint" en paquetes Deno/JSR — encuentra doc copiado entre símbolos hermanos, defaults/throws desactualizados, y arregla el ciclo de exportar tipos privados hasta que el entrypoint quede limpio. Úsalo en cualquier paquete Deno con deno.json(c) y "exports".
+description: Audits existing JSDoc for accuracy (not just coverage) and drives "deno doc --lint" to zero on Deno/JSR packages — finds doc copy-pasted between sibling symbols, stale defaults/throws, and works through the cycle of exporting private types until the entrypoint is clean. Use it on any Deno package with a deno.json(c) and "exports".
 ---
 
-Úsalo como prompt inicial en cualquier paquete Deno/JSR (`deno.json(c)` con `"exports"`) que ya
-tenga JSDoc pero quieras (a) verificar que sea **correcto y no esté desactualizado**, no solo
-"presente", y/o (b) bajar a cero los errores de `deno doc --lint` (cobertura de tipos públicos
-que exige JSR para el score 100 y para que la doc generada en jsr.io no tenga huecos).
+Use this as the initial prompt on any Deno/JSR package (`deno.json(c)` with `"exports"`) that
+already has JSDoc but where you want to (a) verify it's **correct and not stale**, not just
+"present," and/or (b) drive `deno doc --lint` errors to zero (the public-type coverage JSR requires
+for a 100 score, and so the generated docs on jsr.io have no gaps).
 
-Esta tarea tiene DOS fases independientes que puedes correr por separado o juntas:
-- **Fase A — Auditoría de precisión**: encontrar JSDoc que miente o quedó viejo.
-- **Fase B — Cero doc-lint**: exportar/documentar lo que JSR exige para que `deno doc --lint`
-  quede en 0 errores.
+This task has TWO independent phases you can run separately or together:
+- **Phase A — Accuracy audit**: find JSDoc that lies or went stale.
+- **Phase B — Zero doc-lint**: export/document whatever JSR requires so `deno doc --lint` ends up
+  at 0 errors.
 
-## Regla de oro (ahorro de tokens)
+## Golden rule (token savings)
 
-- Corre `deno doc --lint <entrypoint>` UNA vez, redirige a un archivo temporal, y filtra ANSI con
-  `sed -E 's/\x1b\[[0-9;]*m//g'`. Haz todo el triage sobre ese archivo con `grep -oE`/`awk`, no
-  releyendo el comando repetidamente.
-- Agrupa por regla ANTES de tocar nada: `grep -oE "error\[[a-z-]+\]" | sort | uniq -c`. Esto te da
-  el tamaño real del problema (típicamente: `private-type-ref` >> `missing-jsdoc` >
-  `missing-return-type`) y evita que ataques archivos al azar.
-- Arregla primero `missing-jsdoc`/`missing-return-type` (mecánico, sin efectos en cascada) y deja
-  `private-type-ref` para el final (SÍ tiene cascada — ver Fase B).
-- Después de cada tanda de cambios, re-corre el doc-lint completo UNA vez y compara el conteo total
-  contra la corrida anterior. No expliques cada error individual en el chat; resume
-  "N→M errores, quedan estos por categoría".
-- Antes de reportar "sin regresiones", compara contra el baseline con `git stash` (corre el lint
-  con los cambios guardados, anota el número, haz `git stash pop`). Un LSP/diagnóstico en vivo
-  puede mentir; el comando real (`deno check`, `deno doc --lint`, `deno test`) es la fuente de verdad.
+- Run `deno doc --lint <entrypoint>` ONCE, redirect it to a temp file, and strip ANSI with
+  `sed -E 's/\x1b\[[0-9;]*m//g'`. Do all the triage against that file with `grep -oE`/`awk`, don't
+  re-read the command output over and over.
+- Group by rule BEFORE touching anything: `grep -oE "error\[[a-z-]+\]" | sort | uniq -c`. This gives
+  you the real size of the problem (typically: `private-type-ref` >> `missing-jsdoc` >
+  `missing-return-type`) and keeps you from attacking random files.
+- Fix `missing-jsdoc`/`missing-return-type` first (mechanical, no cascade effects) and leave
+  `private-type-ref` for last (it DOES cascade — see Phase B).
+- After each batch of changes, re-run the full doc-lint once and compare the total count against
+  the previous run. Don't explain every individual error in the chat; summarize
+  "N→M errors, these remain by category."
+- Before reporting "no regressions," compare against the baseline with `git stash` (run the lint
+  with the changes stashed, note the number, run `git stash pop`). A live LSP/diagnostic can lie;
+  the actual command (`deno check`, `deno doc --lint`, `deno test`) is the source of truth.
 
-## Fase A — Auditoría de precisión del JSDoc existente (no solo cobertura)
+## Phase A — Accuracy audit of existing JSDoc (not just coverage)
 
-El objetivo no es "que tenga comentario", sino "que el comentario sea cierto hoy". Un doc con
-`@throws`, defaults o comportamiento inventado/desactualizado es peor que no tener doc.
+The goal isn't "it has a comment," it's "the comment is true today." A doc with an invented or
+stale `@throws`, default, or behavior claim is worse than no doc at all.
 
-1. **Identifica la superficie pública real**: lee el archivo de entrada (`mod.ts`/`index.ts`) y
-   lista TODOS los símbolos re-exportados. Esa lista es tu alcance — no audites código interno
-   que un consumidor del paquete nunca ve.
-2. **Divide en categorías temáticas** (clases base/abstractas, decoradores, utils/constantes, tipos
-   puros) y lanza un agente `Explore` por categoría EN PARALELO (un solo mensaje con varias
-   invocaciones), cada uno con instrucciones explícitas de:
-   - Comparar cada claim del doc (parámetros, `@returns`, `@throws`, defaults, orden de ejecución,
-     "esto lanza X", "esto hereda Y") contra la implementación real, línea por línea.
-   - Reportar SOLO con confianza alta y con `archivo:línea` — nada de especulación.
-   - Devolver un reporte corto (400–500 palabras), no transcribir el código.
-   - Decirle explícitamente qué NO debe re-reportar si ya sabes de antemano de 1-2 bugs
-     encontrados por ti mismo (evita que 4 agentes reporten lo mismo).
-3. **Patrones de bug reales que aparecen todo el tiempo** (aprendidos en esta sesión, busca esto
-   específicamente):
-   - Doc copy-pasteado entre símbolos hermanos (p. ej. el doc de `Guard` con la prosa de `Pipe`,
-     o viceversa) — el síntoma es que dos símbolos con comportamiento distinto tienen la MISMA
-     frase.
-   - `@returns`/`@throws` que describe un valor viejo porque la firma cambió (usa `grep` de la
-     firma real, no confíes en el doc para saber qué retorna).
-   - Reclamos de orden de ejecución ("se aplica después de X") que en realidad es al revés —
-     verifica leyendo el código que orquesta la llamada (el "pipeline" real), no el doc del propio
-     decorador.
-   - Un decorador de clase (`@Controller`, `@Resolver`, etc.) que valida/lanza si la clase no
-     extiende la base correcta, pero eso NO está documentado con `@throws`.
-   - Un overload de función/decorador con un campo marcado como opcional en el doc pero requerido
-     en el tipo real (o viceversa) — compara `@param [x]` contra la firma TS real.
-   - Un tipo público cuyo doc lista campos que ya no existen, o que omite campos nuevos — compara
-     la lista de `@property`/prosa contra las keys reales del `type`/`interface`.
-   - Bugs de código de verdad que se descubren auditando docs (no asumas que solo hay bugs de
-     texto): un `.map()` sin `return` dentro de un `Promise.all` (pierde awaits/rechazos), un
-     overload de tipos que exige un campo que el resto de decoradores hermanos no exige.
-4. **Al aplicar un fix de código real encontrado en la auditoría** (no solo de doc): corre el test
-   suite del área afectada antes y después, y confirma que el fix no cambia comportamiento
-   observable salvo el bug corregido.
+1. **Identify the real public surface**: read the entrypoint file (`mod.ts`/`index.ts`) and list
+   ALL re-exported symbols. That list is your scope — don't audit internal code a package consumer
+   never sees.
+2. **Split into thematic categories** (base/abstract classes, decorators, utils/constants, plain
+   types) and launch one `Explore` agent per category IN PARALLEL (a single message with several
+   invocations), each with explicit instructions to:
+   - Compare every doc claim (parameters, `@returns`, `@throws`, defaults, execution order, "this
+     throws X," "this extends Y") against the real implementation, line by line.
+   - Report ONLY with high confidence and with `file:line` — no speculation.
+   - Return a short report (400–500 words), not a transcription of the code.
+   - Be told explicitly what NOT to re-report if you already know of 1-2 bugs you found yourself
+     (avoid 4 agents reporting the same thing).
+3. **Real bug patterns that show up constantly** (learned from real sessions, look for these
+   specifically):
+   - Doc copy-pasted between sibling symbols (e.g. `Guard`'s doc with `Pipe`'s prose, or vice
+     versa) — the symptom is that two symbols with different behavior have the EXACT same sentence.
+   - `@returns`/`@throws` describing a stale value because the signature changed (`grep` the real
+     signature, don't trust the doc to tell you what it returns).
+   - Execution-order claims ("this applies after X") that are actually backwards — verify by
+     reading the code that orchestrates the call (the real "pipeline"), not the decorator's own
+     doc.
+   - A class decorator (`@Controller`, `@Resolver`, etc.) that validates/throws if the class
+     doesn't extend the right base, but that's NOT documented with `@throws`.
+   - A function/decorator overload with a field marked optional in the doc but required in the
+     real type (or vice versa) — compare `@param [x]` against the real TS signature.
+   - A public type whose doc lists fields that no longer exist, or that omits new fields — compare
+     the `@property`/prose list against the real `type`/`interface` keys.
+   - Real code bugs discovered while auditing docs (don't assume the only bugs are text bugs): a
+     `.map()` missing a `return` inside a `Promise.all` (drops awaits/rejections), a type overload
+     that requires a field none of its sibling decorators require.
+4. **When applying a real code fix found during the audit** (not just a doc fix): run the affected
+   area's test suite before and after, and confirm the fix doesn't change observable behavior
+   beyond the fixed bug.
 
-## Fase B — Cero errores de `deno doc --lint`
+## Phase B — Zero `deno doc --lint` errors
 
-### Las 3 categorías típicas y cómo se arreglan
+### The 3 typical categories and how to fix them
 
-1. **`missing-jsdoc`** — símbolo exportado (incluyendo métodos/constructores/getters de una clase
-   exportada, y también miembros `private` de TS — JSR los sigue viendo porque `private` es solo
-   compile-time) sin comentario. Fix: una línea de JSDoc explicando qué hace, no qué es obvio del
-   nombre.
-2. **`missing-return-type`** — función exportada (incluye `const fn: SomeType = (x) => {...}`)
-   sin anotación de retorno explícita en la propia expresión de función, aunque el tipo de la
-   variable ya lo implique. Fix: anota el retorno directamente en la función (`(x): void => {}`,
-   `(x): Promise<void> => {}`).
-3. **`private-type-ref`** — un símbolo público referencia un tipo que JSR no puede resolver porque
-   NO es alcanzable desde el entrypoint (`mod.ts`). Importante: esto pasa AUNQUE el tipo ya tenga
-   `export` en su propio archivo — JSR exige que también esté re-exportado desde el entrypoint. Y
-   pasa el doble si el tipo ni siquiera tiene `export` en su archivo de origen (hay que agregarlo).
+1. **`missing-jsdoc`** — an exported symbol (including methods/constructors/getters of an exported
+   class, and even TS `private` members — JSR still sees them because `private` is compile-time
+   only) with no comment. Fix: one line of JSDoc explaining what it does, not what's obvious from
+   the name.
+2. **`missing-return-type`** — an exported function (including `const fn: SomeType = (x) => {...}`)
+   with no explicit return annotation on the function expression itself, even if the variable's
+   type already implies it. Fix: annotate the return directly on the function
+   (`(x): void => {}`, `(x): Promise<void> => {}`).
+3. **`private-type-ref`** — a public symbol references a type JSR can't resolve because it's NOT
+   reachable from the entrypoint (`mod.ts`). Important: this happens EVEN IF the type already has
+   `export` in its own file — JSR also requires it to be re-exported from the entrypoint. And it
+   happens doubly if the type doesn't even have `export` in its source file (you have to add it).
 
-### Proceso iterativo para `private-type-ref` (el que realmente tiene volumen)
+### Iterative process for `private-type-ref` (the one with real volume)
 
-1. Extrae la lista única de tipos "privados" referenciados:
+1. Extract the unique list of "private" types referenced:
    `grep "error\[private-type-ref\]" | grep -oE "references private type '[^']+'" | sed ... | sort -u`
-2. Para cada tipo único, ubica su archivo de origen (`grep -rn "^export type X\|^type X"`).
-   Si no tiene `export`, agrégaselo ahí mismo (no lo dupliques ni lo redefinas en otro lado).
-3. Agrupa por archivo de origen y añade un bloque `export type { A, B, C } from '...'` en el
-   entrypoint, ordenado alfabéticamente dentro del bloque para que sea fácil mantenerlo.
-4. **Casos que no son un simple tipo suelto — decide con criterio, no automatices ciegamente**:
-   - Clases base abstractas internas que son la superclase real de clases ya públicas (ej. una
-     clase pública `extends InternalBase` sin que `InternalBase` esté exportada): expórtalas como
-     `export type { InternalBase } from '...'` (solo el tipo, no hace falta el valor si nadie va a
-     instanciarla directamente — son abstractas). Es lo correcto, no un parche: si un consumidor
-     extiende la clase pública, hereda miembros de esa base y necesita poder nombrarla.
-   - Una clase interna sin `export` en absoluto (ej. `class Foo {}` que solo se usa como tipo de
-     un singleton exportado, `const publicThing: Readonly<Foo> = ...`): agrégale `export class Foo`
-     en el archivo de origen; es un cambio seguro (no cambia runtime, solo hace el tipo nombrable).
-   - Tipos que vienen de una librería de terceros (`npm:paquete`) referenciados por un tipo público
-     tuyo: NO los persigas exportando el tipo del paquete externo. Suele destapar un grafo de tipos
-     internos de esa librería (genéricos con sus propios defaults no exportados) que no controlas
-     y que no vale la pena arreglar. Deja ese ÚNICO error como excepción documentada y sigue.
-     Cómo confirmarlo: si al re-exportar el tipo externo el conteo de errores SUBE en vez de bajar,
-     es la señal de que entraste al grafo interno de un paquete de terceros — revierte esa
-     exportación puntual.
-5. **Cascada esperada, no es un error tuyo**: cada tipo que pasa de privado a público puede:
-   - Necesitar su propio JSDoc (antes no se exigía porque era privado) → nueva tanda de
-     `missing-jsdoc`, arréglalos igual que en la Fase B.1.
-   - Referenciar a su vez OTRO tipo no alcanzable → nueva tanda de `private-type-ref`.
-   Itera: fix en lote → `deno check <entrypoint>` (que no haya typos/exports rotos) →
-   `deno doc --lint` → repite. 3-5 rondas es normal para un paquete con ~70 errores iniciales.
-6. **Cuidado con el editor de texto en lote**: si usas `sed`/`python` para insertar `export`
-   antes de un `type X = ...` en varios archivos a la vez, verifica con `deno check` inmediatamente
-   después — un `old_string` de reemplazo demasiado corto puede matchear como substring dentro de
-   una línea que ya tenía `export` y duplicarlo (`export /** doc */\nexport type X = ...`), lo cual
-   es un `SyntaxError` silencioso hasta que corres el check.
+2. For each unique type, find its source file (`grep -rn "^export type X\|^type X"`). If it has no
+   `export`, add it right there (don't duplicate or redefine it elsewhere).
+3. Group by source file and add an `export type { A, B, C } from '...'` block in the entrypoint,
+   alphabetically ordered within the block so it's easy to maintain.
+4. **Cases that aren't a simple loose type — use judgment, don't automate blindly**:
+   - Internal abstract base classes that are the real superclass of already-public classes (e.g. a
+     public class `extends InternalBase` without `InternalBase` being exported): export them as
+     `export type { InternalBase } from '...'` (type-only, no need for the value if nobody's going
+     to instantiate it directly — it's abstract). This is the correct fix, not a patch: if a
+     consumer extends the public class, they inherit members from that base and need to be able to
+     name it.
+   - An internal class with no `export` at all (e.g. `class Foo {}` only used as the type of an
+     exported singleton, `const publicThing: Readonly<Foo> = ...`): add `export class Foo` in the
+     source file; it's a safe change (doesn't change runtime, only makes the type nameable).
+   - Types coming from a third-party library (`npm:package`) referenced by one of your public
+     types: do NOT chase this by exporting the external package's type. It usually opens up a graph
+     of that library's own internal types (generics with their own non-exported defaults) that you
+     don't control and that isn't worth fixing. Leave that ONE error as a documented exception and
+     move on. How to confirm this: if re-exporting the external type makes the error count go UP
+     instead of down, that's the signal you've stepped into a third-party package's internal type
+     graph — revert that specific export.
+5. **Expected cascade, not your fault**: every type that goes from private to public can:
+   - Need its own JSDoc (wasn't required before because it was private) → new batch of
+     `missing-jsdoc`, fix it the same way as in Phase B.1.
+   - Reference yet ANOTHER unreachable type → new batch of `private-type-ref`.
+   Iterate: batch fix → `deno check <entrypoint>` (no typos/broken exports) → `deno doc --lint` →
+   repeat. 3-5 rounds is normal for a package with ~70 initial errors.
+6. **Watch out for batch text editing**: if you use `sed`/python to insert `export` before a
+   `type X = ...` in several files at once, verify immediately with `deno check` afterward — an
+   `old_string` that's too short can match as a substring inside a line that already had `export`
+   and duplicate it (`export /** doc */\nexport type X = ...`), which is a silent `SyntaxError`
+   until you run the check.
 
-## Verificación final (no te la saltes)
+## Final verification (don't skip it)
 
 ```bash
 deno fmt --check <paths>
 deno lint <paths>
 deno check <entrypoint>
-deno test --allow-all   # o el runner del proyecto
-deno doc --lint <entrypoint>   # debe bajar a 0, o a las excepciones documentadas de terceros
-deno publish --dry-run --allow-dirty   # confirma "Checking for slow types..." sin warnings
+deno test --allow-all   # or the project's runner
+deno doc --lint <entrypoint>   # must drop to 0, or to documented third-party exceptions
+deno publish --dry-run --allow-dirty   # confirms "Checking for slow types..." with no warnings
 ```
 
-Para confirmar que no rompiste nada preexistente (y no solo que "no subió el número"):
+To confirm you didn't break anything pre-existing (and not just that "the number didn't go up"):
 ```bash
 git stash && deno doc --lint <entrypoint> 2>&1 | tail -3 && git stash pop
 ```
 
-## Formato de reporte esperado (para no gastar tokens narrando)
+## Expected report format (to avoid wasting tokens narrating)
 
 ```
-Doc-lint: X errores → Y errores (categorías: private-type-ref A→B, missing-jsdoc C→D, missing-return-type E→F)
-Excepciones documentadas (no arregladas a propósito):
-- <tipo> — referencia un tipo interno de <paquete npm> no exportable sin arrastrar su grafo interno.
+Doc-lint: X errors → Y errors (categories: private-type-ref A→B, missing-jsdoc C→D, missing-return-type E→F)
+Documented exceptions (deliberately not fixed):
+- <type> — references an internal type of <npm package> not exportable without dragging in its internal graph.
 
-Bugs de código reales encontrados en la auditoría (no solo de doc):
-- archivo.ts:línea — <qué hacía mal y qué se corrigió, una frase>
+Real code bugs found during the audit (not just doc):
+- file.ts:line — <what was wrong and what was fixed, one sentence>
 
-Docs corregidos por estar desactualizados (muestra solo los más importantes, no los 30):
-- archivo.ts:línea — <qué decía vs qué es cierto ahora, una frase>
+Docs fixed for being stale (show only the most important ones, not all 30):
+- file.ts:line — <what it said vs. what's true now, one sentence>
 
-Verificación: fmt/lint/check/test OK, doc-lint sin regresión (confirmado con git stash).
+Verification: fmt/lint/check/test OK, doc-lint with no regression (confirmed via git stash).
 ```
