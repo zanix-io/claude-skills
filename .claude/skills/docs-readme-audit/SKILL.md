@@ -63,7 +63,11 @@ Don't wait for the user to ask "is it complete?" to find these — look for all 
 2. **Every code example must reflect the real API**: if an example calls `object.method(x)`, verify
    against the real signature what `x` actually is — a common mistake is passing the type/name of
    something instead of the identifier the method actually expects (e.g. `manager.start('rest')`
-   when `start()` expects the ID that `create()` returned, not the type string).
+   when `start()` expects the ID that `create()` returned, not the type string). If you find a wrong
+   factual claim (a bad env var name, a wrong default), grep that exact wrong string across the
+   source's own JSDoc too, not just the README — a README is often partly copy-pasted from JSDoc, so
+   the same lie can have one shared origin in two (or three) places, and fixing only the README
+   leaves the underlying doc-in-source still wrong for anyone reading `deno doc` directly.
 3. **Links and anchors**: every internal `[text](path)` must resolve to a real file, and every
    `[text](path#section)` must resolve to a real heading in that file — verify both with a script
    (see Phase 4), not visually. Also check badges (shields.io, etc.): the badge link's URL sometimes
@@ -82,6 +86,13 @@ Don't wait for the user to ask "is it complete?" to find these — look for all 
    duplicated in two places. A short example repeated as a teaser in two spots (README + guide) IS
    fine; a full duplicated catalog or table is NOT — check this explicitly by comparing every README
    table against the ones in `docs/`, not only when writing new content.
+6b. **A README that's already 100% accurate and covers every export is not the same as a README
+   that's well-organized — segment regardless of whether coverage already technically passes.** If
+   there's no `docs/` yet, that's not evidence the README doesn't need it: check length/structure on
+   their own terms (a self-contained section long enough to have its own sub-numbering, or one that
+   could stand alone as a topic, per 1.6/1.7) and segment into Phase 2 whenever those triggers fire.
+   Don't let "Phase 2's coverage requirement is already satisfied inside the README" talk you out of
+   doing Phase 2's actual segmentation work — coverage and organization are different bars.
 7. **Logical order**: install/setup steps that ended up "loose" between two unrelated sections
    should move next to the Installation section. An unnumbered section that interrupts a numbered
    sequence (1, 2, [no number], 3) breaks the reading flow — move it to the end.
@@ -100,6 +111,15 @@ Don't wait for the user to ask "is it complete?" to find these — look for all 
     arrows connecting them) doesn't contradict what the text right next to it explicitly claims — a
     diagram that only draws 2 of 4 connections mentioned in the text is a real source of confusion,
     not just a cosmetic detail.
+12. **JSR "Overview" tab vs. `README.md` (JSR packages only)**: if the root entrypoint (`.` in
+    `exports`) has a `@module`-tagged JSDoc comment, JSR's Overview tab shows THAT comment instead
+    of the real `README.md` — all the README work above can go live and still not be what visitors
+    see. Don't "fix" this by removing the `@module` tag: JSR's separate "Has module docs in all
+    entrypoints" score item (Phase 4.6) requires every entrypoint, including the root, to have one
+    — removing it trades a display problem for a score regression. The supported fix is the
+    package's jsr.io **Settings → Readme Source → "Readme"** toggle, which forces README display
+    regardless of `@module`. That's a manual step on jsr.io requiring the owner's authenticated
+    session — flag it to the user with exact instructions, don't try to route around it in code.
 
 ## Phase 2 — Full coverage in `docs/` (exports → documentation mapping)
 
@@ -128,9 +148,25 @@ Don't wait for the user to ask "is it complete?" to find these — look for all 
    variants of the same concept (e.g. three decorators that accept the same options), confirm in
    the code that all three really accept the same values — an enum value valid for two but excluded
    by type for the third is an easy gap to miss if you only look at one example at a time.
+8. **One capability, multiple exposure surfaces — document all of them, not just the first you
+   find**: the same underlying operation is often reachable through more than one surface (e.g. a
+   schema getter, a standalone exported function, AND a static method attached to a bound
+   model/instance for the same protection/transform logic). Finding and documenting one surface
+   (the getter, say) doesn't mean the others are covered — explicitly grep the type definitions
+   (`SchemaStatics`, or whatever the bound-instance's static-method type is called) for methods that
+   duplicate a capability you already wrote up under a different name/form, and cover each real
+   surface with its own short example, cross-linked to the others.
 
 ## Phase 3 — CHANGELOG and version
 
+0. **Check the CHANGELOG isn't already stale before adding to it**: compare its most recent version
+   entry against the real `version` field in `deno.json(c)`. If the package is several versions
+   ahead of what the CHANGELOG shows, there's undocumented release history — find the commit/tag for
+   the last-logged version (`git log --oneline -- deno.json(c)` to track each version bump), diff
+   forward from there to HEAD in per-version chunks, and backfill one entry per real released
+   version (with its actual date from the commit) before writing today's new entry on top. Don't
+   skip this because it's tedious — a CHANGELOG stuck 6 versions behind the real package version is
+   a bigger real-world problem than any single missing line in the README.
 1. Add a new entry following the existing format (usually Keep a Changelog:
    Added/Changed/Fixed/Removed/Deprecated/Security). Group by those categories, not by
    file-touched.
@@ -220,8 +256,18 @@ EOF
 # 5. Types, tests, and (if JSR) doc-lint + slow-types
 deno check <entrypoint>
 deno test --allow-all
-deno doc --lint <entrypoint>          # must be 0, or only documented third-party exceptions
+# Lint ALL entrypoints from deno.jsonc's exports map together, not just the root — linting
+# only mod.ts undercounts errors that live in the other entrypoint files.
+deno doc --lint <entrypoint1> <entrypoint2> ...  # must be 0, or only documented third-party exceptions
 deno publish --dry-run --allow-dirty  # confirms "Checking for slow types..." with no warnings
+
+# 6. (JSR only) Every entrypoint in exports needs its own @module-tagged doc comment — this is
+#    what JSR's package-score "Has module docs in all entrypoints" check requires, separate from
+#    doc-lint above. Missing ones show up as real gaps here, not as a doc-lint error.
+for f in $(grep -oE '"\./[^"]*":\s*"\./[^"]+\.ts"|"\.":\s*"\./[^"]+\.ts"' deno.jsonc | grep -oE './[^"]+\.ts$'); do
+  grep -q '@module' "$f" 2>/dev/null || echo "MISSING @module: $f"
+done
+echo "(no output above = every entrypoint has one)"
 ```
 
 To confirm a count (e.g. `doc --lint` errors) isn't a regression and not just "it didn't go up":
@@ -238,7 +284,15 @@ If there is a real project (or several):
 1. Check which version of the library that consumer has pinned — if it's older than the one you're
    documenting, confirm the changes between versions are additive (don't break what you're about to
    validate) before assuming behavior is the same.
-2. Look specifically for:
+2. **Grep every real import of the package across the ENTIRE consumer repo first**
+   (`grep -rln "@scope/pkg" src`), not just the 2-3 files you happen to open — a systemic convention
+   (e.g. "every single import uses the root package, never a subpath export") only becomes visible
+   at full-repo scale; sampling one or two files risks concluding "mixed usage" from too small a
+   sample, or missing the pattern entirely. If the real import style consistently diverges from what
+   your docs show as the primary pattern (e.g. docs lead with subpath imports but 100% of real usage
+   imports from the root), that's a real finding — the docs' recommended pattern should match what
+   actually gets used, with the alternative demoted to a secondary mention, not the reverse.
+3. Look specifically for:
    - API option combinations used in production that your docs never show.
    - Real file/module naming conventions vs. the documented ones — and if they differ, find out
      WHETHER it's the library itself that enforces them or a satellite tool (e.g. a separate
@@ -253,10 +307,16 @@ If there is a real project (or several):
    - Error handling, environment variables/constants actually set.
    - The real origin of any concrete class used in an example (does it come from this library, from
      a sibling, or did the app itself write it?) — don't assume it, grep the real import.
-3. **Strict scope**: the goal is to validate/complete THIS library's docs, not document the
+   - **Compositional "recipe" patterns**: real code often combines two primitives you've *already*
+     documented individually into a non-obvious technique neither one's own doc would ever suggest
+     (e.g. masking a search term with the same masking function, specifically to build a
+     partial-match query filter against a field that's stored masked). These recipes are exactly
+     what isolated API-reference docs never show — when you spot one, add it as its own short
+     example near whichever primitive is the more surprising half of the combination.
+4. **Strict scope**: the goal is to validate/complete THIS library's docs, not document the
    satellite libraries the real project also uses. If a real pattern belongs to another library,
    note it as "out of scope, lives in `<package>`" and move on — don't write a guide for it here.
-4. **If a finding turns out to be a real behavior bug in the library** (not just a doc gap) — for
+5. **If a finding turns out to be a real behavior bug in the library** (not just a doc gap) — for
    example, a decorator that doesn't correctly apply something a sibling decorator does apply —
    **stop and ask the user** before patching the code. Fixing documentation proceeds autonomously;
    changing runtime behavior is the user's call, even if the fix is obvious and one line long.

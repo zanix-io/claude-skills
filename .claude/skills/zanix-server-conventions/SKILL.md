@@ -10,6 +10,12 @@ patterns below were confirmed against real production Zanix microservices, cross
 convention (how real apps happen to structure things) vs. a hard framework rule (verified in
 `@zanix/server`'s source), it's called out explicitly.
 
+Applying these patterns to a new handler/interactor/provider, or adjusting an existing one, is
+itself a feature addition or modification in the Zanix service's own codebase — run it through
+`feature-completeness-conventions`' gate (tests for the new/changed behavior, docs updated if the
+service documents its own endpoints/jobs, JSDoc accurate on any exported symbol) rather than
+treating "it follows the conventions below" as the finish line.
+
 ## Entry point: `@zanix/core`, not raw `bootstrapServers`
 
 Real apps don't call `bootstrapServers` from `@zanix/server` directly. `main.ts` is almost always
@@ -235,3 +241,6 @@ When reviewing a PR (or writing new code) in a Zanix backend service, check for:
       connection via `this.registry` (or does it lose the ability to be reached from elsewhere)?
 - [ ] Are RTOs (`Body`/`Params`/`Search`) used for request validation, rather than manual
       validation inside the handler body?
+- [ ] For new/changed handlers, interactors, providers, or jobs: does the change pass the
+      `feature-completeness-conventions` gate (tests covering the new/changed behavior, docs/JSDoc
+      updated if stale, no lingering assertion of the old behavior)?

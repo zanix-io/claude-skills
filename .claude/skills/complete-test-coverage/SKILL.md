@@ -44,6 +44,18 @@ left unclosed is explicitly justified line by line, not just rounded off.
 - Before writing a test, classify the gap (see Phase 2). The "not real" ones don't get written —
   report them in one line and move on. Chasing 100% on dead code is the single biggest waste of
   tokens possible in this task.
+- **Always `rm -rf coverage` (or equivalent) before a full run, and never run two test-runner
+  invocations concurrently against the same project.** Coverage profile directories accumulate one
+  file per isolate/worker across every run that wrote to them — running the full suite more than
+  once without clearing it first silently merges old and new profiles into one contaminated report,
+  and any percentage read from it afterward cannot be trusted (a file can show 100% from stale data
+  while the current source no longer even exercises that path). Separately, if the project under
+  test touches shared external state (a local SQLite/KV file, a message broker, a shared port) — two
+  concurrent test-runner processes can deadlock or hang on that shared state (a lock file never
+  released by a killed prior run, an orphaned message sitting in a queue). If a run hangs where it
+  never did before, suspect leftover state from an earlier interrupted run before suspecting the
+  code: check for and clean up stray lock files and any test-created records in shared
+  infrastructure, then retry with a single, sequential, freshly-cleared run.
 
 ## Phase 0 — Starting point and blind-spot detection
 
@@ -133,6 +145,15 @@ For each uncovered line/branch, decide in one sentence:
   cheaper and more reliable. Never force an external command/service to fail by manipulating global
   process environment variables (`PATH`, etc.): it's not test-isolated and the risk of breaking
   other tests or the process itself outweighs the value of the branch.
+  - **Before filing anything under this bucket, check whether it's actually a plain callable in
+    disguise.** Message/event handlers (subscribers, consumers, `onmessage`/`onerror` callbacks,
+    factory-produced workers) are frequently just methods on a class — instantiate the class
+    directly and call the method with a manufactured payload/context, entirely bypassing the
+    transport (queue, socket, HTTP) that invokes it in production. "This runs when a real message
+    arrives" is not the same claim as "this needs a real message to run" — the second is usually
+    false. Only fall back to this bucket once you've confirmed the target genuinely can't be
+    invoked without the live transport (e.g. it's private/unreachable, or the transport does
+    unskippable work the method depends on).
 - **Defensive error handling that should never trigger** (try/catch wrapping a full bootstrap,
   ignore-and-log) → not worth forcing the catch; forcing it usually requires deliberately breaking
   the happy path of everything it wraps.
