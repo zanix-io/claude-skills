@@ -171,6 +171,73 @@ package already on JSR: `curl -s https://api.jsr.io/scopes/<scope>/packages/<pkg
 value is baked in at publish time per version, not recomputed live, so a local fix only shows up on
 JSR after a new version is actually published.
 
+### A 5th failure mode `deno doc --lint` reports as something else entirely: `missing-explicit-type` slow types from schema-validation libraries
+
+`deno doc --lint` and `deno publish --dry-run`'s slow-types checker can both fire on the exact same
+line and report it under **two different, unrelated-looking codes** — `private-type-ref` from
+`deno doc --lint`, `missing-explicit-type` from the slow-types checker — because they're answering
+different questions ("can I resolve this reference at all" vs. "can I resolve this reference's type
+*without running inference*"). Applying `private-type-ref`'s standard remedy (export/re-export the
+referenced type — see step 4 above) does **not** fix the slow-types error, and can even leave it in
+place while making the doc-lint error disappear: exporting a value doesn't give it an explicit type
+annotation, and an explicit annotation is exactly what the slow-types checker is asking for.
+
+The classic trigger is a public type derived via inference from a schema-validation library's
+builder output — most commonly Zod's `z.infer<typeof someSchema>` (the same shape applies to
+Valibot, io-ts, or any other "build a validator, infer the static type from it" library) — where
+`someSchema` itself has no explicit type annotation:
+
+```ts
+// schema.ts (internal, never exported)
+export const genericSchema = z.object({ title: z.string(), content: z.string() })
+
+// typings.ts (public) — this is what actually triggers the error
+import type GenericSchema from './schema.ts'
+export type GenericTemplateSchema = z.infer<typeof GenericSchema>
+```
+
+`deno publish --dry-run --allow-dirty` reports this as `missing-explicit-type` pointing at
+`genericSchema`'s own declaration — not at the public `GenericTemplateSchema` alias. Confirm and
+triage the same way as `private-type-ref` (own its own pass, don't assume `deno doc --lint` already
+covers it):
+
+```bash
+deno publish --dry-run --allow-dirty 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' > /tmp/slow-types.txt
+grep -c "error\[missing-explicit-type\]" /tmp/slow-types.txt
+grep -B1 -A6 "error\[missing-explicit-type\]" /tmp/slow-types.txt
+```
+
+**Cascades further than `private-type-ref` does.** The slow-types checker needs to fully resolve
+the schema's *entire* composed shape, so it also flags completely unexported locals used *inside*
+that schema's construction (a sub-schema value merged in via `.and()`/spread/composition) — symbols
+`deno doc --lint`'s reference-following never even mentions, because they're never the direct
+`typeof` target, just an ingredient of it. Don't assume the list from `deno doc --lint` is a
+superset; re-derive it from `deno publish --dry-run` directly.
+
+**The fix is NOT to hand-annotate the schema's own type.** For builder-pattern validation libraries,
+the real generic type of a composed schema (`ZodObject<{...}, ...>` with its full parameter list) is
+often impractically verbose to write and re-write by hand on every field change — and doing so
+defeats much of the point of using the library. The clean fix is to **decouple**: keep the schema
+itself unexported and internal (used only for runtime parsing, wherever the code actually calls
+`.parse()`/`.safeParse()`), and hand-write the public-facing type once, as a plain
+`interface`/`type` matching the schema's effective shape field-by-field:
+
+```ts
+// typings.ts (public) — no import of the schema at all, no z.infer
+/** Data accepted by the `generic` template. Mirrors `schema.ts`'s `genericSchema` shape. */
+export type GenericTemplateSchema = {
+  title: string
+  content: string
+}
+```
+
+This trades a small hand-maintenance cost (update the type by hand if the schema's fields change)
+for total freedom in the internal schema — it can use any library feature, any nesting, any
+version upgrade, without ever touching the published package's type-check score again. Verify the
+new type still matches the real schema field-by-field before committing to it (read the schema
+file, don't guess), and re-run the `grep` above to confirm the count actually dropped — don't rely
+on `deno doc --lint` to confirm this category, since it was never measuring the same thing.
+
 ### Iterative process for `private-type-ref` (the one with real volume)
 
 1. Extract the unique list of "private" types referenced:
@@ -180,6 +247,11 @@ JSR after a new version is actually published.
 3. Group by source file and add an `export type { A, B, C } from '...'` block in the entrypoint,
    alphabetically ordered within the block so it's easy to maintain.
 4. **Cases that aren't a simple loose type — use judgment, don't automate blindly**:
+   - The referenced "private" type is a schema-validation library's builder output (Zod, Valibot,
+     etc.) with no explicit type annotation of its own: exporting/re-exporting it clears the
+     `private-type-ref` doc-lint error but does NOT fix the underlying `missing-explicit-type`
+     slow-types error — see "A 5th failure mode" below for the real fix (decouple the public type
+     from the schema instead of making the schema reachable).
    - Internal abstract base classes that are the real superclass of already-public classes (e.g. a
      public class `extends InternalBase` without `InternalBase` being exported): export them as
      `export type { InternalBase } from '...'` (type-only, no need for the value if nobody's going
@@ -216,8 +288,13 @@ deno lint <paths>
 deno check <entrypoint>
 deno test --allow-all   # or the project's runner
 deno doc --lint <entrypoint>   # must drop to 0, or to documented third-party exceptions
-deno publish --dry-run --allow-dirty   # confirms "Checking for slow types..." with no warnings
+deno publish --dry-run --allow-dirty   # must report 0 errors, not just "no warnings" — see below
 ```
+
+Don't treat the `deno publish --dry-run` line as a rubber-stamp confirmation — it's a real,
+independent diagnostic pass (see "A 5th failure mode" above). Any `error[missing-explicit-type]` it
+reports is a genuine slow-types problem `deno doc --lint` may report as something else entirely (or
+not report at all), and needs its own triage pass, not just a glance at the exit status.
 
 `deno doc --lint` at 0 is necessary but not sufficient for the JSR score itself — also run the
 combined `deno doc --json` + percentage script from "A 4th failure mode" above against ALL of
@@ -263,6 +340,7 @@ script after fixing until it prints nothing, then re-run the full verification b
 
 ```
 Doc-lint: X errors → Y errors (categories: private-type-ref A→B, missing-jsdoc C→D, missing-return-type E→F)
+Slow types (deno publish --dry-run): X errors → Y errors (missing-explicit-type)
 Documented exceptions (deliberately not fixed):
 - <type> — references an internal type of <npm package> not exportable without dragging in its internal graph.
 
