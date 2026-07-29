@@ -64,6 +64,58 @@ and it tolerates real-world naming drift (`*.service.ts` for interactors works f
 file gets imported transitively, e.g. from a handler). Don't "fix" a project's naming to match
 `@zanix/server`'s own README table unless it's actually breaking auto-discovery.
 
+## What `@zanix/cli` actually scaffolds (CLI scaffolding convention)
+
+Running `zanix new server`/`app-server` creates the skeleton below, but as of this writing **every
+server-specific file it writes is empty (0 bytes)** — verified directly (`find` + byte count on a
+freshly scaffolded project), not assumed. This is a real, independently tracked bug in the
+underlying template-content mechanism (`@zanix/utils`'s tree builder fetches each file's boilerplate
+live from the owning library's published JSR `src/templates/` directory; `@zanix/core`'s is empty
+and `@zanix/server`'s doesn't exist yet). Treat the scaffolded tree as **where files go**, not as a
+source of example content — every pattern in this skill comes from real, hand-written production
+code, not from what the CLI currently outputs.
+
+```
+src/server/
+  connectors/example.connector.ts    (empty)
+  handlers/example.handler.ts        (empty)
+    rtos/example.rto.ts              (empty)
+  interactors/service.interactor.ts  (empty)
+  jobs/job.defs.ts                   (empty)
+  repositories/
+    model.defs.ts                    (empty, FLAT — one file, not one per model)
+    seeders/seeder.ts                (empty, a single file)
+shared/middlewares/{pipe,interceptor}.defs.ts   (empty)
+zanix/config.ts                                  (empty)
+```
+
+Concrete divergences from "Project structure actually observed" above, and why (investigated, not
+assumed — the CLI isn't automatically "the truth" just because it's newer):
+
+- **`connectors/` is scaffolded but real projects examined don't use it.** Every `@zanix/datamaster`-backed
+  project sampled gets its connector (`ZanixMongoConnector`) from the companion library, not a
+  hand-written one — matching this skill's own Providers/Repositories section below. Delete the
+  folder rather than filling in `example.connector.ts` if the project only uses library-supplied
+  connectors.
+- **`repositories/` starts flat; real projects restructure to nested-per-model almost immediately.**
+  The CLI's single `model.defs.ts` is a reasonable *empty-project* starting point, but every real
+  repository sampled uses `repositories/<name>/{entity.provider.ts,model.defs.ts,seeders/}` (as
+  documented below) as soon as there's more than one model. Restructure into that shape the moment
+  a second repository is needed, rather than growing the flat file.
+- **Seeders scaffold a single `seeder.ts`, not the real three-file trio.** Every real repository's
+  seeders are `main.ts` (re-exports `defineSeeders(seedersProd, seedersDev)`) + `seeders.dev.ts` +
+  `seeders.prod.ts` — verified byte-identical across every repository sampled, not the CLI
+  whole-project baseline's single-file shape. `zanix generate seeder <name>` (a newer, separate
+  `@zanix/cli` command) scaffolds this real trio directly into an existing project — prefer it over
+  hand-copying the pattern, and prefer it over the whole-project tree's `seeder.ts` example.
+- **`main.ts`/`worker.ts` are not scaffolded at all.** The Entry point section above
+  (`import Zanix from '@zanix/core'; Zanix.start(...)`, optionally a separate `worker.ts` for
+  `@zanix/asyncmq/worker`) has to be hand-written after `zanix new` — there's no template for it yet.
+- **`handlers/rtos/validations/IsObjectID.ts` (a custom Mongo ObjectId validator) isn't scaffolded
+  either**, but showed up hand-written, nearly identically, in every real project sampled that
+  validates an ObjectId in an RTO. Expect to write this by hand today; it's a candidate for a future
+  `zanix generate` addition, not an existing one.
+
 ## Handlers
 
 Controllers stack a class decorator with `Interactor` injection, then per-method HTTP decorators
