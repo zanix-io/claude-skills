@@ -109,12 +109,28 @@ this service should expose its own local admin API alongside hosting the
 hub — the common "business API + a separate hub, nothing local"
 combination only needs `Zanix.start()`'s default.
 
-**Real gotcha**: `Zanix.start()` and `ZanixAdminHub.start()` each resolve
-their own public REST server's port from the same env-var fallback chain —
-calling both in the same process without passing a distinct `port` to at
-least one fails with `AddrInUse`. If both also enable their own admin-side
-server, set distinct `ADMIN_SERVER_ID`/`ADMIN_HUB_SERVER_ID` values if you
-want both anchored.
+**Real gotcha**: sharing one port between `Zanix.start()`'s public server and
+`ZanixAdminHub.start()` (or its embedded `admin` server) is supported by
+design, not a failure mode — `WebServerManager` binds one real `Deno.serve()`
+listener per port and dispatches every server sharing it by a `dispatchKey`
+lookup table (`@zanix/server`'s `manager.ts`, `create()`'s own "Sharing a
+port" remarks and `shared-port.test.ts`), so this never throws `AddrInUse`.
+The actual risk is a **silent dispatch-key collision**: if two servers on the
+same port ever resolve to the identical dispatch key — the same anchored id,
+or the same `globalPrefix` when unanchored — the later `create()` call's
+handler replaces the earlier one's for that key with no error, silently
+making the first server's routes unreachable (`manager.ts`'s own `box.current
+= Object.freeze({...box.current, [dispatchKey]: dispatchHandler})`). This
+doesn't happen by default: the public server's own default prefix (`'api'`),
+the embedded local admin's own unanchored default (`` `admin-${type}` ``),
+and `ZanixAdminHub`'s own unanchored default (`'admin-hub'`) are all
+distinct, which is exactly why the hub defaults to `'admin-hub'` in the first
+place — see `admin-hub-single-port-unanchored.test.ts`, which asserts all
+three sharing one port with zero anchoring config. It can still happen if you
+explicitly set matching `globalPrefix`es on two of them, or reuse the same
+value for both `ADMIN_SERVER_ID` and `ADMIN_HUB_SERVER_ID` — those are
+separate env vars specifically so the embedded admin and the hub can each be
+anchored without colliding with each other.
 
 ## Why `/admin/service-token` is always registered
 
@@ -152,8 +168,11 @@ as the local API already does.
 - [ ] Is this service's `ADMIN_SERVER_ID` actually registered in the hub's
       `ServiceRegistry` if the hub's triggers aggregator needs to include
       it — co-location alone never wires them together?
-- [ ] If both servers run in the same process, does at least one have an
-      explicit `port` distinct from the other's env-var-resolved default?
+- [ ] If both servers share the same port in the same process, do they
+      resolve to genuinely distinct dispatch keys — different anchored ids
+      (`ADMIN_SERVER_ID` vs. `ADMIN_HUB_SERVER_ID`, never the same value for
+      both) or different `globalPrefix`es — rather than relying on an
+      unverified assumption that the unanchored defaults never collide?
 - [ ] Is `admin: true` genuinely needed here — or does this deployment only
       need the common "business API + separate hub" combination, which
       needs no `admin` option at all?
