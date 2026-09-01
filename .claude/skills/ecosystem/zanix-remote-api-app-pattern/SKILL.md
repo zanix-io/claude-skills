@@ -1,21 +1,21 @@
 ---
 name: zanix-remote-api-app-pattern
-description: The layered pattern for a @zanix/space consumer app that owns no data of its own and builds its own UI against a remote, typed Zanix API — a resource descriptor bound to the backend's real RTOs, a thin client over RestClient, file-based pages as the only HTTP-touching layer, and generic @zanix/space-ui composition. Grounded in @zanix/console's own real Triggers and Templates vertical slices. Use when scaffolding or reviewing a @zanix/space app that consumes another service's admin/API surface rather than owning its own backend.
+description: The layered pattern for a @zanix/space consumer app that owns no data of its own and builds its own UI against a remote, typed Zanix API — a resource descriptor bound to the backend's real RTOs, a thin client over RestClient, file-based pages as the only HTTP-touching layer, and generic @zanix/space-ui composition. Grounded in @zanix/console's own real Triggers/Templates/DLQ vertical slices, and in @zanix/console-kit, the shared infrastructure extracted from them. Use when scaffolding or reviewing a @zanix/space app that consumes another service's admin/API surface rather than owning its own backend.
 ---
 
 This documents a real, proven shape — not a proposal. `@zanix/console` is a
 `@zanix/space` app that owns no database of its own and presents a UI over
-`@zanix/admin`'s remote hub API. Two independent vertical slices built this
-way — Triggers (`src/triggers/`, `src/space/routes/triggers/`) and Templates
-(`src/templates/`, `src/space/routes/templates/`) — each with its own full
-CRUD flow (list, detail, create, edit, delete-with-confirmation) and its own
-passing unit test suite (`src/@tests/unit/admin-resources/`,
-`src/@tests/unit/clients/`, `src/@tests/unit/triggers/`,
-`src/@tests/unit/templates/`). Templates is the proof the pattern
-generalizes: it reused the exact hub-client-factory shape, the exact
-resource-descriptor shape, and even the exact confirm-modal component
+`@zanix/admin`'s remote hub API. Three independent vertical slices built this
+way — Triggers (`src/triggers/`, `src/space/routes/triggers/`), Templates
+(`src/templates/`, `src/space/routes/templates/`), and DLQ (`src/dlq/`,
+`src/space/routes/dlq/`, a narrower shape with no create/edit route — see
+layer 4's own route-shape note) — each with its own passing test suite
+(`src/@tests/unit/admin-resources/`, `src/@tests/unit/clients/`,
+`src/@tests/unit/{triggers,templates,dlq}/`). Templates and DLQ are the proof
+the pattern generalizes: both reused the exact hub-client-factory shape, the
+exact resource-descriptor shape, and even the exact confirm-modal component
 Triggers already established, unrenamed — zero new abstraction needed for
-the second resource.
+either later resource.
 
 **`@zanix/console` is the cited precedent, not this skill's subject.** This
 skill documents the reusable pattern any consumer app can follow when it
@@ -23,19 +23,37 @@ builds UI against a remote, typed Zanix backend — a fresh consumer names its
 own layers after its own domain, not after `AdminResource`/`admin-resources/`
 (see the naming note below).
 
+**`@zanix/console-kit` now exists as real, shared infrastructure for parts of
+this pattern** — extracted from `@zanix/console`'s own original
+`admin-resources/`/`clients/`/`auth/` once a second real, independent
+deployer of this pattern (its own `zanix-admin` hub, its own consumer app,
+not yet built as of this writing) needed the identical shape instead of
+forking `console`'s source. Not yet published to JSR — a consumer currently
+links it locally (see `deno-workspace-link-pitfalls`). `console` remains the
+first real consumer of the kit, and this pattern's own end-to-end validation
+ground — not the kit itself. Each layer section below says explicitly what
+moved into the kit and what's still per-consumer.
+
 ## Golden rule (token savings)
 
 - The six layers below are additive, in order — scaffold, then descriptor,
   then client, then pages, then presentation, then auth. Don't reach for a
   later layer's concern (e.g. a page-level auth guard) while still deciding
   the descriptor's shape.
-- Layers 1-2 (the backend's real API contract, and whatever generated/typed
-  client artifact the CLI produces from it) are shared, published
-  infrastructure — never redesign them per consumer. Layers 3-5 (the thin
-  client wrapper and its fronting interactor, the pages, the presentation
-  composition) are where a consumer's own domain work actually lives —
-  expect to write these fresh for every new resource, the same way
-  Templates did after Triggers.
+- Layer 1 (the backend's real API contract) is shared, published
+  infrastructure — never redesign it per consumer. As of `@zanix/console-kit`'s
+  extraction, the *mechanical shape* of layers 2 (the `AdminResource` type
+  and its field-drift safeguard), 3 (the hub-client-factory triad), 6
+  (auth composition), and a narrow slice of 4 (column/detail-field
+  derivation) are ALSO shared, imported infrastructure now — a consumer
+  installs/instantiates these, never redefines the shape from scratch. What
+  stays genuinely per-consumer, in every layer, is the DOMAIN CONTENT poured
+  into that shape: which concrete resource a descriptor describes, which
+  concrete client class a factory wraps, which concrete columns/filters a
+  page renders, which concrete service identity an auth instantiation binds
+  to. Expect to write that content fresh for every new resource, the same
+  way Templates did after Triggers — see "What stays the same vs. what's
+  genuinely new per consumer" below for the precise line.
 - Read `triggers.resource.ts` alongside `templates.resource.ts`
   (`console/src/triggers/`, `console/src/templates/`) side by side before
   designing a new resource descriptor — the two real, documented deviations
@@ -51,13 +69,15 @@ serves its own API alongside consuming a remote one). Nothing about this
 pattern changes that flow — the app starts as an ordinary `@zanix/space`
 project.
 
-### 2. Resource descriptor — one file per resource, naming is yours
+### 2. Resource descriptor — one instance per resource, naming the CONTENT is yours
 
 A resource descriptor is a plain object binding **presentation/interaction
 metadata** (which columns, which actions, which confirmation copy) to the
 backend's **real RTO(s)** — never redeclaring a field's type, requirement, or
-validation constraints locally. `@zanix/console`'s own shape
-(`src/admin-resources/admin-resource.ts`) is the concrete reference:
+validation constraints locally. The `AdminResource` TYPE itself is now
+`@zanix/console-kit`'s own shared shape (its root export,
+`src/admin-resource.ts` in that package) — a consumer imports it rather than
+redefining it locally; the concrete shape:
 
 ```ts
 export interface AdminResourceField {
@@ -100,21 +120,31 @@ export interface AdminResource {
 }
 ```
 
-**Naming is local to the consumer, not part of the pattern.** `@zanix/console`
-calls this `AdminResource`/`admin-resources/` because its own domain is
-admin-shaped — every resource it presents really is an admin resource. A
-consumer building a UI over a non-admin API (a catalog, a billing dashboard,
-anything not fronting `@zanix/admin`) names its own equivalent after its own
-domain — `CatalogResource`/`catalog-resources/`, or whatever fits — not
-`AdminResource`. Nothing about the shape above is admin-specific.
+**The CONCRETE INSTANCE's name is local to the consumer; the TYPE's name is
+not, now that it's centralized.** `@zanix/console` calls its own instances
+`TRIGGERS_ADMIN_RESOURCE`/`TEMPLATES_ADMIN_RESOURCE` — that half stays a
+free per-resource choice, the same as any other constant. The `AdminResource`
+type itself, though, is now a real, shared export from `@zanix/console-kit`
+(named `AdminResource` because `console`'s own domain — and the kit's own
+name — are admin-shaped), not something a consumer redeclares locally
+anymore. A consumer building UI over a genuinely non-admin API (a catalog, a
+billing dashboard, anything not fronting `@zanix/admin`) that wants a
+domain-fitting local name can still alias it on import
+(`import { AdminResource as CatalogResource } from '@zanix/console-kit'`) —
+nothing about the shape itself is admin-specific — but the type it aliases
+is shared, not a second, independently-defined interface. This is a real,
+deliberate trade-off the centralization below introduced, not an oversight.
 
-**Deliberately stays local to the consumer app, never generalized into a
-shared package.** This was an explicit, already-made decision for
-`@zanix/console` itself: no second real consumer existed yet even inside that
-one app, and freezing a presentation-shaped type in a widely-consumed base
-package is expensive to walk back speculatively. Revisit centralizing it only
-once a second real, independent consumer needs the identical shape — not
-before.
+**Centralized into `@zanix/console-kit` once a second real, independent
+consumer needed the identical shape.** This was previously an explicit,
+deliberately-deferred decision — freezing a presentation-shaped type in a
+shared package before a genuine second consumer existed would have been
+speculative. That precondition is now met (see this skill's own intro), so
+the type lives in the kit; `assertAdminResourceFieldsMatchRto` and
+`formatFieldValue` moved with it (same file in the kit,
+`columnsFromResource`/`detailFieldsFromResource` alongside them — see layer 4
+below). A NEW consumer never redefines `AdminResource` locally — it imports
+the kit's own type and only ever writes concrete instances against it.
 
 **Reference the backend's real RTO by field name, never redeclare it:**
 
@@ -156,38 +186,50 @@ before.
   `fields` entirely — adding one means inventing a new upstream RTO field,
   which is the backend's decision, not the consumer's workaround.
 
-**Keep a real, automated safeguard against field drift.** `@zanix/console`'s
-`assertAdminResourceFieldsMatchRto` (same file) walks the referenced RTO(s)
-via `@zanix/validator`'s `classMetadata` and throws if any declared
-`fields[].key` doesn't exist on the union of the resource's own referenced
-RTOs. Call it from a unit test for every concrete resource a consumer
-defines — see `src/@tests/unit/admin-resources/triggers-resource.test.ts`
-and its Templates sibling for the reference usage. Without this, a
-resource's presentation metadata can silently drift out of sync with the
-real contract it claims to describe.
+**Keep a real, automated safeguard against field drift.** `@zanix/console-kit`'s
+own `assertAdminResourceFieldsMatchRto` (root export, same module as
+`AdminResource` itself) walks the referenced RTO(s) via `@zanix/validator`'s
+`classMetadata` and throws if any declared `fields[].key` doesn't exist on
+the union of the resource's own referenced RTOs. Call it from a unit test
+for every concrete resource a consumer defines — see
+`src/@tests/unit/admin-resources/triggers-resource.test.ts` in `@zanix/console`
+for the reference usage against a real resource, and the kit's own
+`src/@tests/unit/admin-resource.test.ts` for the mechanism's own generic
+drift-detection tests (moved there from `console`'s test suite once the
+mechanism itself did). Without this, a resource's presentation metadata can
+silently drift out of sync with the real contract it claims to describe.
 
 ### 3. Thin client over `RestClient`
 
 One wrapper module per backend surface — never a browser `fetch`, and never
-called from anywhere but a page's `loader`/`action`. `@zanix/console`'s
-`src/clients/triggers-hub.client.ts`, `templates-hub.client.ts`, and
-`registry-hub.client.ts` are three real instances of the identical shape:
+called from anywhere but a page's `loader`/`action`. The pluggable-factory
+SHAPE is now `@zanix/console-kit/client`'s own `createHubClientFactory`
+(`(ClientCtor, hubAuth) => {get, set, reset}`) — a consumer instantiates it
+once per hub-facing resource client, rather than hand-writing the shape
+fresh:
 
-- A `*ClientFactory` type (`() => Client | Promise<Client>`).
-- A module-level `activeFactory`, defaulting to a real factory that resolves
-  auth headers and the backend's base URL, then constructs the real typed
-  client (`TriggersHubClient`/`TemplatesHubClient`/`RegistryHubClient`, all
-  imported from the backend's own published package — never hand-rolled).
-- `set*ClientFactory`/`reset*ClientFactory` — the seam a test swaps in a fake
-  client through, so the interactor's own test suite never exercises real
-  crypto or network.
-- A `get*Client()` accessor that returns whatever the active factory
-  produces.
+```ts
+const { get, set, reset } = createHubClientFactory(TriggersHubClient, {
+  requireAdminHubBaseUrl,
+  getAdminHubAuthHeaders,
+})
+export { get as getTriggersHubClient, set as setTriggersHubClientFactory, reset as resetTriggersHubClientFactory }
+```
 
-This shape is why adding Templates' client took no new design: it's
-`triggers-hub.client.ts` copied and re-typed, nothing invented. Auth headers
-for the client itself come from `src/clients/admin-hub-auth.ts` — see layer 6
-below.
+- `get` returns the real client, authenticated against the configured hub,
+  via whichever factory `set` last installed (or the real default).
+- `set`/`reset` are the seam a test swaps in a fake client through, so the
+  interactor's own test suite never exercises real crypto or network.
+
+`@zanix/console`'s `src/clients/triggers-hub.client.ts`/
+`templates-hub.client.ts`/`registry-hub.client.ts`/`dlq-hub.client.ts` are
+four real instantiations of this ONE shared shape — before this extraction,
+they were four hand-written copies differing only in which client class
+they constructed; confirmed byte-for-byte identical otherwise. Adding a
+new resource's client is now genuinely zero new design: call
+`createHubClientFactory` with the new client class, nothing to invent. The
+`hubAuth` pair (`requireAdminHubBaseUrl`/`getAdminHubAuthHeaders`) comes from
+layer 6's own `createAdminHubAuthClient` instantiation, below.
 
 **A page never calls this client directly — a `ZanixInteractor` sits between
 them.** `@zanix/console`'s `TriggersInteractor`/`TemplatesInteractor`
@@ -209,8 +251,7 @@ never inside the page itself.
 `@zanix/space` file-based routes: `loader` for reads, `action` for
 mutations. This is the sole layer permitted to call a layer-3 interactor or
 apply an auth guard — resource descriptors and presentation components never
-do either. `@zanix/console`'s two real slices both follow the same four-route
-shape:
+do either. Triggers and Templates both follow the same four-route shape:
 
 ```
 routes/<resource>/page.tsx                    — list (loader only)
@@ -222,12 +263,44 @@ routes/<resource>/[id.../edit/page.tsx        — update (loader + action)
 (`src/space/routes/triggers/` and `src/space/routes/templates/` are the two
 real instances — `[serviceId]/[model]` and `[channel]/[name]` respectively.)
 
+**This four-route shape isn't universal — a resource with a genuinely
+different action set gets a genuinely different route count, not a forced
+fit.** DLQ (`src/space/routes/dlq/`) has only two routes — `page.tsx` (list)
+and `[serviceId]/[id]/page.tsx` (detail) — no `new/`, no `edit/`, because
+DLQ's own two real mutations (`requeue`/`discard`) are both destructive
+actions on an EXISTING entry, never a create/update in the CRUD sense. Both
+share the ONE detail route's own `action`, distinguished by a hidden
+`<input name="_intent">` value on each of the two forms rather than by a
+separate route per mutation — a legitimate variant of layer 4, not a
+deviation to normalize away. Decide a new resource's own route count from
+its real action set, not from copying the four-route shape by default.
+
 A list page's columns and a detail page's fields are always *derived* from
 the resource descriptor's own `fields` metadata (filtered by `column`/
 `detail`, sorted by `order`) — never a second, hand-maintained parallel list.
-Both real pages (`triggers/page.tsx`'s `COLUMNS`, `templates/page.tsx`'s
-`COLUMNS`) do exactly this, so a descriptor change is the only edit a column
-change ever needs.
+The derivation ITSELF is now `@zanix/console-kit`'s own
+`columnsFromResource<TRow>(resource)`/`detailFieldsFromResource(resource)`
+(root exports, alongside `AdminResource`) — extracted once this exact
+`.filter().sort().map()` shape turned up byte-for-byte identical across
+every real list/detail page (`triggers/page.tsx`, `templates/page.tsx`,
+`dlq/page.tsx`'s own `COLUMNS`; the two real detail pages' own
+`DETAIL_FIELDS`), differing only in the row's own type parameter. A
+descriptor change is the only edit a column change ever needs; a new
+resource's list/detail page calls these two functions rather than
+re-deriving the shape.
+
+**Deliberately NOT extended into a full generic page-shell factory** (e.g. a
+`createResourceListPage(resource, ...)` that would wire an entire
+`SpacePageController`, guard included). Investigated as technically
+feasible — `@zanix/space`'s `@Page()`/`@Guard()` are pure runtime class
+decorators, with no static analysis standing in the way of a factory
+function declaring one internally — but a real page's OWN content beyond its
+columns (filter forms, table captions, empty states, row-href patterns) is
+genuinely domain-specific per resource, confirmed by reading every real
+page rather than assumed; templating it would either lose that flexibility
+or amount to rebuilding a full admin generator, which stays out of scope
+(below). Everything past `columnsFromResource`/`detailFieldsFromResource`
+stays hand-written per page, by design.
 
 **Real footgun: a path param's case must actually round-trip, and this needs
 checking, not assuming.** `@zanix/server`'s router preserves each path
@@ -244,12 +317,14 @@ case issue with a query string; that's a workaround for a problem the router
 already solves correctly.
 
 **Every page with a real mutating `action` also carries `@Guard(csrfGuard())`,
-alongside the session guard, not instead of it.** All four real mutating
-routes (`new/page.tsx`, the detail page's `remove` action, and `edit/page.tsx`,
-for both Triggers and Templates) stack both guards on the class
-(`@Guard(csrfGuard())` then `@Guard(requireAdminSession([...]))`); a
-read-only list page carries neither. See `space-middleware-and-security` for
-`csrfGuard()` itself — this pattern only says where it applies, not how it
+alongside the session guard, not instead of it.** Every real mutating route
+across all three slices (`new/page.tsx`, the detail page's own destructive
+action(s), and `edit/page.tsx` where one exists) stacks both guards on the
+class (`@Guard(csrfGuard())` then `@Guard(requireAdminSession([...]))`) —
+confirmed true even for DLQ's own two-intent single detail route (above),
+which has no `edit/page.tsx` at all; a read-only list page carries neither.
+See `space-middleware-and-security` for `csrfGuard()` itself — this pattern
+only says where it applies, not how it
 works.
 
 ### 5. Presentation — generic `space-ui` plus consumer-specific composition
@@ -281,9 +356,11 @@ Two distinct credential paths, never conflated:
   the human operator navigating the app. A full-page `GET`/`<a>` navigation
   can't attach a bearer `Authorization` header the way `AuthTokenValidation`/
   `jwtValidationGuard` expect, so a `@zanix/space` page guard re-derives the
-  session from the cookie per page load instead — see `@zanix/console`'s
-  `src/auth/guards.ts` (`requireAdminSession`) for the real composition of
-  `refreshSessionTokens` + `permissionsPipe`, applied as a class-level
+  session from the cookie per page load instead — see `@zanix/console-kit/auth`'s
+  `requireAdminSession` (the SHARED implementation now — `@zanix/console`'s
+  own `src/auth/guards.ts` is a thin re-export, no local logic left) for the
+  real composition of `refreshSessionTokens` + `permissionsPipe`, applied as
+  a class-level
   `@Guard(...)` on the page controller. That guard shape — rotation followed
   by a later check in the same chain — is exactly the case
   `attachRotatedSessionToError`/`recoverRotatedSessionCookie` exist for
@@ -301,29 +378,43 @@ Two distinct credential paths, never conflated:
   service (not the human's own browser), use `createServiceAssertion`/
   `exchangeServiceCredential` (`@zanix/auth`'s `createServiceAuthClient`) to
   sign and exchange a service credential — never a token exposed to the
-  browser. `@zanix/console`'s `src/auth/service-client.ts`
-  (`consoleServiceAuthClient`) and `src/clients/admin-hub-auth.ts`
-  (`getAdminHubAuthHeaders`) are the real wrapper and the real call site: a
-  cached `(targetServiceId, exchangeUrl) => Promise<ServiceAuthHeaders>`
-  function, rebuilt only when a test needs a fresh one
-  (`resetAdminHubAuthCache`), never per request.
+  browser. `@zanix/console-kit/auth`'s `createHubServiceAuthClient(serviceId)`
+  (a thin wrapper) and `createAdminHubAuthClient(serviceId)` (the real
+  credential wiring: `requireAdminHubBaseUrl`/`getAdminHubAuthHeaders`/
+  `resetAdminHubAuthCache`) are the shared implementation now — a consumer
+  instantiates `createAdminHubAuthClient` ONCE, bound to its own service
+  identity (`@zanix/console`'s own `src/clients/admin-hub-auth.ts` does
+  exactly this, bound to `CONSOLE_SERVICE_ID` — see layer 3 above for how the
+  hub-client factories consume its two accessors). `getAdminHubAuthHeaders`
+  itself is a cached `() => Promise<ServiceAuthHeaders>` function, rebuilt
+  only when a test needs a fresh one (`resetAdminHubAuthCache`), never per
+  request.
 
 Both mechanisms are pre-existing `@zanix/auth` primitives — this pattern
 composes them, it doesn't add a new auth mechanism of its own.
 
 ## What stays the same vs. what's genuinely new per consumer
 
-Layers 1-2 — the backend's real API contract and whatever typed
-client/RTO artifact is generated or published from it — are the exact same
-shared infrastructure regardless of which consumer app is built. **Layers
-3-5 are domain-specific by nature and are never auto-generated**: the thin
-client wrapper and its fronting interactor, the pages, and the presentation
-composition all encode choices specific to one consumer's own resources
-(which fields matter on a list, what a destructive action's confirmation
-copy says, how a filter form is shaped) that no generator can decide
-correctly on a consumer's behalf — the same reasoning that keeps
-`AdminResource` itself uncentralized (above) also rules out a full admin-UI
-generator for these layers.
+**The distinction is no longer "which layer" — it's "shape vs. content"
+within every layer.** Layer 1 (the backend's real API contract) is the exact
+same shared infrastructure regardless of which consumer app is built, same
+as always. As of `@zanix/console-kit`'s extraction, the reusable MECHANICAL
+SHAPE of layers 2, 3, 6, and a slice of 4 is ALSO shared — a consumer
+imports/instantiates it, never reinvents it (see each layer's own section
+above for exactly what moved). What's still genuinely new per consumer, in
+every one of those layers, is the DOMAIN CONTENT poured into that shared
+shape: which concrete resource a descriptor describes, which concrete client
+class a factory wraps, which concrete service identity an auth
+instantiation binds to, which concrete columns/filters/copy a page renders.
+**No generator can decide that content correctly on a consumer's behalf** —
+confirmed directly: a full generic page-shell factory (layer 4) was
+investigated as technically feasible and deliberately not built, precisely
+because a real page's own filter forms/captions/empty states turned out to
+be genuinely domain-specific, not boilerplate, when checked against every
+real page rather than assumed. That's the same reasoning that ruled out a
+full admin-UI generator for the pattern as a whole (below) — this
+extraction moved the genuinely-duplicated SHAPE into the kit; it didn't
+change which parts of the pattern are inherently per-consumer.
 
 ## Skills this pattern builds on
 
@@ -347,6 +438,10 @@ content:
 - `admin-service-authentication` — the sign/exchange/call service-credential
   flow layer 6's server-to-server bullet describes, when the remote backend
   is itself `@zanix/admin`-shaped.
+- `deno-workspace-link-pitfalls` — how to link an unpublished
+  `@zanix/console-kit` checkout locally before it's on JSR (`@zanix/console`'s
+  own `deno.jsonc` does this today) without hitting one of the four real,
+  confirmed footguns that technique carries.
 
 To prove a real instance of this pattern still works end to end — not just
 that its unit tests pass against a mocked hub client — see
@@ -357,21 +452,22 @@ building a new resource.
 
 ## Checklist before calling a new resource's vertical slice done
 
-- [ ] Resource descriptor references the backend's real RTO(s) by field name
-      only — no redeclared type/constraint/default anywhere in it. Confirmed
-      it's a real, usable value export (not a type-only re-export) before
-      importing it directly.
-- [ ] A unit test calls the descriptor's own field-drift assertion
-      (`assertAdminResourceFieldsMatchRto` or the consumer's equivalent)
-      against every concrete resource.
-- [ ] The thin client lives in its own module, follows the
-      factory/set/reset/get shape, and is never called outside the
-      interactor that fronts it.
+- [ ] Resource descriptor uses `@zanix/console-kit`'s own `AdminResource`
+      type (never a locally-redeclared interface) and references the
+      backend's real RTO(s) by field name only — no redeclared
+      type/constraint/default anywhere in it. Confirmed it's a real, usable
+      value export (not a type-only re-export) before importing it directly.
+- [ ] A unit test calls `@zanix/console-kit`'s own
+      `assertAdminResourceFieldsMatchRto` against every concrete resource.
+- [ ] The thin client is one instantiation of `@zanix/console-kit/client`'s
+      `createHubClientFactory`, and is never called outside the interactor
+      that fronts it.
 - [ ] A `ZanixInteractor` sits between every page and the thin client — no
       page's `loader`/`action` calls a `get*Client()` accessor directly.
       Destructive-action audit logging lives in the interactor, not the page.
-- [ ] List/detail views derive their columns/fields from the descriptor's
-      own metadata — no second hand-maintained list.
+- [ ] List/detail views derive their columns/fields via
+      `@zanix/console-kit`'s own `columnsFromResource`/
+      `detailFieldsFromResource` — no second hand-maintained list.
 - [ ] Any case-sensitive identifier used in a route is a real path
       segment, with case-preservation actually confirmed, not a
       query-string workaround.
@@ -389,15 +485,25 @@ building a new resource.
 ## Out of scope — do not do these
 
 - Building a new agent (e.g. a `console-builder`-style generator) to
-  automate this pattern end to end. That's explicitly sequenced AFTER this
-  skill exists and after real infrastructure it would depend on
-  (`zanix generate openapi`, a `space-ui` `Table` component, `@zanix/admin`'s
-  registry endpoint) is in place — not before, and not part of this skill's
-  own scope.
-- Centralizing the resource-descriptor shape (`AdminResource` or a
-  consumer's own equivalent) into `@zanix/utils` or any other shared
-  package. That stays a per-consumer decision until a second real,
-  independent consumer needs the identical shape.
+  automate this pattern end to end. Two of the three prerequisites this was
+  sequenced after are now real and confirmed (`space-ui`'s `Table`
+  component; `@zanix/admin`'s `GET /registry` endpoint) — but the third,
+  `zanix generate openapi`, only generates in the REVERSE direction
+  (introspects a project's own REST routes and writes an `openapi.json`; no
+  spec-to-client-code generator exists). A full automated scaffold-from-spec
+  generator is still not unblocked, and remains out of this skill's own
+  scope regardless — that's a separate, further step from
+  `@zanix/console-kit` existing as an installable package.
+- Further centralizing anything beyond what `@zanix/console-kit` already
+  covers (the `AdminResource` shape, the hub-client-factory shape, the auth
+  composition layer, column/detail-field derivation) into `@zanix/utils` or
+  any other shared package. The kit itself is the answer to what this
+  bullet used to defer — see this skill's own intro and layer 2's "Naming"
+  note for the real trade-off centralizing it introduced. Don't go further
+  than the kit's own current, extracted surface without a similarly real,
+  confirmed second-consumer need for whatever's being proposed next (a
+  generic page-shell factory was checked against exactly this bar and
+  didn't clear it — see layer 4 above).
 - Designing a `zanix new --template <name>` scaffold preset for this
   pattern. Real, already-built preset infrastructure exists in `@zanix/cli`
   (`ScaffoldRecipeRegistry`), but adding a second preset is a product
