@@ -19,20 +19,16 @@ before assuming this summary is still accurate.
   typo otherwise only surfaces the first time something real tries to use
   it.
 
-## Configuring the registry
+## Configuring the registry — two supported paths
 
-```env
-ZANIX_ADMIN_SERVICES=[{"serviceId":"billing","adminBaseUrl":"http://billing.internal:30248/billing-rest"}]
-```
-
-A **static** list — no dynamic self-registration. Configure in code
-(constructor entries), via `ZANIX_ADMIN_SERVICES` (JSON array, same
-shape), or both — an env entry overrides a constructor entry with the same
+A **static** list — no dynamic self-registration. Both paths below are
+confirmed exported from the package root (`jsr:@zanix/admin`) and can be
+combined — an env entry overrides a constructor entry with the same
 `serviceId`. Each entry's `serviceId` should match how that service is
 known elsewhere: its own `ADMIN_SERVER_ID` and its registered
 `JWK_PUB_<serviceId>` for authenticating to it (`admin-service-authentication`).
 
-## One shared registry, two consumers
+**Path 1 — in code (primary),** via `ServiceRegistry`/`setServiceRegistry`:
 
 ```ts
 import { ServiceRegistry, setServiceRegistry } from 'jsr:@zanix/admin@[version]'
@@ -41,6 +37,22 @@ setServiceRegistry(new ServiceRegistry([
   { serviceId: 'billing', adminBaseUrl: 'http://billing.internal:30248/billing-rest' },
 ]))
 ```
+
+**Path 2 — declaratively, via env var (no code change):**
+
+```env
+ZANIX_ADMIN_SERVICES=[{"serviceId":"billing","adminBaseUrl":"http://billing.internal:30248/billing-rest"}]
+```
+
+The env var's name is also exported as `SERVICE_REGISTRY_ENV`, so a
+consumer that needs to reference it programmatically (tooling, deploy
+scripts) doesn't have to hardcode the string:
+
+```ts
+import { SERVICE_REGISTRY_ENV } from 'jsr:@zanix/admin@[version]' // 'ZANIX_ADMIN_SERVICES'
+```
+
+## One shared registry, two consumers
 
 `TriggersAggregator` (fanning out `/admin/triggers`/Discovery reads) and
 the templates sync endpoint (pulling a service's `/.well-known/zanix/code-templates`

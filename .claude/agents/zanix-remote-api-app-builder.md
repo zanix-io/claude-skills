@@ -163,25 +163,38 @@ another dispatch of this agent.
    them.
 3. **Decide the auth composition** — a genuine per-app judgment call, not a
    mechanical default:
+   - **Is the remote backend a `zanix-admin` hub** (`@zanix/admin`'s
+     `ZanixAdminHub`/`defineAdminHubApp`)? If yes, install
+     `@zanix/console-kit` (not yet published to JSR — link it locally per
+     `deno-workspace-link-pitfalls` until it is) and instantiate its
+     `./auth` exports instead of hand-writing this layer — `@zanix/console`
+     itself now does exactly this, no local reimplementation left. Only
+     hand-write the shapes below when the backend genuinely isn't
+     `@zanix/admin`-shaped (console-kit's `./auth` layer is tied to it —
+     `ADMIN_HUB_BASE_URL`, `/admin/service-token`).
    - **Does a human operator need to log into this app?** If yes, build the
-     human-session half: a `guards.ts`-shaped composition of
-     `refreshSessionTokens` + `permissionsPipe` (or `AuthTokenValidation`/
+     human-session half: `requireAdminSession` (`@zanix/console-kit/auth`,
+     or a `guards.ts`-shaped composition of `refreshSessionTokens` +
+     `permissionsPipe` when hand-writing — or `AuthTokenValidation`/
      `jwtValidationGuard` if the app's own shape genuinely supports bearer
      headers — confirm which fits before assuming the cookie-based pattern
-     applies, see `auth/guards.ts`'s own doc in `@zanix/console` for why
-     THAT app needed the cookie-rotation shape specifically), a
-     `login.interactor.ts`-shaped `ZanixInteractor` issuing sessions via
-     `generateSessionTokens`, and the login form's own RTO. If the app has
+     applies, see that function's own doc for why `@zanix/console` needed
+     the cookie-rotation shape specifically), a `login.interactor.ts`-shaped
+     `ZanixInteractor` issuing sessions via `generateSessionTokens` (always
+     app-specific — never in the kit, since bootstrap credentials are a
+     per-deployment concern), and the login form's own RTO. If the app has
      no human-facing login at all (a purely machine-to-machine consumer),
      skip this half entirely — don't build a login page nobody needs.
    - **Does this app's server-side `loader`/`action` code need to call a
      remote Zanix backend?** (True for essentially every instance of this
      pattern, since the whole point is presenting UI over a remote API.) If
-     yes, build the service-to-service half: a `service-client.ts`-shaped
-     thin wrapper over `createServiceAuthClient`
-     (`createServiceAssertion`/`exchangeServiceCredential`), plus a
-     backend-specific auth-headers resolver (`admin-hub-auth.ts`'s own
-     shape: a required-base-url guard + a cached
+     yes, build the service-to-service half: `createAdminHubAuthClient(serviceId)`
+     (`@zanix/console-kit/auth`, when the backend is a `zanix-admin` hub —
+     one instantiation, bound to this app's own service identity constant)
+     or, when hand-writing, a `service-client.ts`-shaped thin wrapper over
+     `createServiceAuthClient` (`createServiceAssertion`/
+     `exchangeServiceCredential`) plus a backend-specific auth-headers
+     resolver (a required-base-url guard + a cached
      `getAuthHeaders`-shaped accessor) if the backend needs its own
      exchange-endpoint wiring.
    - **Never conflate the two** — no service credential is ever exposed to
@@ -201,24 +214,32 @@ another dispatch of this agent.
    applying `zanix-remote-api-app-pattern`'s own layers 2-5, but sized to
    whatever the SIMPLEST real resource is, not necessarily full CRUD (the
    Registry precedent above). Concretely:
-   - A thin client module for the backend surface this resource calls,
-     following the factory/set/reset/get shape (`*ClientFactory`,
-     `activeFactory`, `set*ClientFactory`/`reset*ClientFactory`,
-     `get*Client()`) — this is the seam the resource's own tests swap a
-     fake client through.
+   - A thin client module for the backend surface this resource calls. When
+     the backend is a `zanix-admin` hub, this is one instantiation of
+     `@zanix/console-kit/client`'s `createHubClientFactory(ClientCtor,
+     hubAuth)` — `hubAuth` is the `requireAdminHubBaseUrl`/
+     `getAdminHubAuthHeaders` pair step 3's `createAdminHubAuthClient`
+     instantiation returned. Otherwise, hand-write the factory/set/reset/get
+     shape (`*ClientFactory`, `activeFactory`, `set*ClientFactory`/
+     `reset*ClientFactory`, `get*Client()`) — this is the seam the
+     resource's own tests swap a fake client through, either way.
    - A `ZanixInteractor` fronting that client — the only thing a page's
      `loader`/`action` ever calls.
    - One page (list-only is a legitimate complete first slice) applying the
      auth guard(s) decided in step 3, rendering via an existing
      `@zanix/space-ui` component.
-   - A resource descriptor (`AdminResource`-shaped or the app's own
-     domain-named equivalent) ONLY if this resource's own presentation
-     genuinely needs one (multiple fields with column/detail metadata,
-     more than one action) — a single read-only list with two or three
-     directly-rendered columns doesn't need one yet, matching Registry's
-     own real precedent. Add the descriptor once a SECOND resource or a
-     mutating action makes the shared shape actually earn its keep — that
-     next step is `zanix-feature-builder`'s job, not this agent's.
+   - A resource descriptor (`@zanix/console-kit`'s own `AdminResource` type
+     when the backend is a `zanix-admin` hub — never a locally-redeclared
+     interface; the app's own domain-named equivalent, hand-written,
+     otherwise) ONLY if this resource's own presentation genuinely needs one
+     (multiple fields with column/detail metadata, more than one action) —
+     a single read-only list with two or three directly-rendered columns
+     doesn't need one yet, matching Registry's own real precedent. Once it
+     does, derive its columns via `@zanix/console-kit`'s own
+     `columnsFromResource` rather than hand-rolling the derivation. Add the
+     descriptor once a SECOND resource or a mutating action makes the
+     shared shape actually earn its keep — that next step is
+     `zanix-feature-builder`'s job, not this agent's.
 5. **Verify.** Run `deno check`/`deno test`/`deno fmt --check`/`deno lint`
    on every new/touched file. Confirm the first page actually renders real
    data end to end if a live backend is reachable in this environment;
