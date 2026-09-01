@@ -39,6 +39,12 @@ delivery channel.
 ## Skills to load
 
 - Always: `auth-oauth2`.
+- **If the new provider's own SDK is a real npm package** (not just plain
+  HTTP calls against its OAuth2 endpoints) → `deno-lazy-dependency-pattern`
+  — a consumer that never configures this specific provider shouldn't pay
+  for its npm dependency; providers are independently-coexisting instances
+  (unlike `datamaster`'s single-instance connector slots), so this is
+  exactly the "genuinely conditional" shape the pattern targets.
 - `feature-completeness-conventions` — Tests/Docs/JSDoc gates, same as any other
   package.
 - `zanix-test-tier-conventions` — always; this workflow's own unit+
@@ -81,6 +87,10 @@ delivery channel.
 - **Always** → `zanix-issue-reporting`. Anything real you're not fixing in
   this change gets filed automatically via `zanix report-issue` per that
   skill's rules, not just mentioned in your report.
+- **Always**, whenever the change adds or edits a comment/JSDoc →
+  `documentation-voice` — present tense, no reference to an authoring
+  session, a plan, or a tracker/issue number (see `datamaster-builder`'s
+  own skill entry for the real incident this guards against).
 - Only if the new provider's user-info response needs a genuinely new shape of
   session-subject derivation (rare — most providers give email or a stable
   numeric/string id) does this touch anything beyond the standard three-file

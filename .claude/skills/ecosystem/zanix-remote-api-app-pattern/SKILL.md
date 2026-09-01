@@ -284,7 +284,19 @@ Two distinct credential paths, never conflated:
   session from the cookie per page load instead — see `@zanix/console`'s
   `src/auth/guards.ts` (`requireAdminSession`) for the real composition of
   `refreshSessionTokens` + `permissionsPipe`, applied as a class-level
-  `@Guard(...)` on the page controller.
+  `@Guard(...)` on the page controller. That guard shape — rotation followed
+  by a later check in the same chain — is exactly the case
+  `attachRotatedSessionToError`/`recoverRotatedSessionCookie` exist for
+  (`auth-jwt-and-sessions`'s "Guard-stage rotation recovery"): without it, a
+  403 from `permissionsPipe` strands the client on a cookie the rotation
+  already blocklisted, with the replacement never delivered.
+  `requireAdminSession` wraps its `requirePermissions` throw in
+  `attachRotatedSessionToError`, and this project's own `mod.ts` wires
+  `onError: globalErrorHandler(recoverRotatedSessionCookie(),
+  createNotFoundHandler())` (`space-routing-and-rendering`'s "Composing
+  multiple `onError` handlers") to recover it. Any consumer building a
+  human-session guard on this same `refreshSessionTokens` + later-check
+  shape needs both halves wired, not just the guard side.
 - **Server-to-server** — when a page's `loader`/`action` calls another Zanix
   service (not the human's own browser), use `createServiceAssertion`/
   `exchangeServiceCredential` (`@zanix/auth`'s `createServiceAuthClient`) to
@@ -328,9 +340,20 @@ content:
 - `space-middleware-and-security` — `csrfGuard()`/`requireAdminSession`-style
   guard composition layer 4's mutating pages apply, and the CSP/security
   header defaults every page gets regardless.
+- `auth-jwt-and-sessions` — the refresh-rotation mechanics and "Guard-stage
+  rotation recovery" (`attachRotatedSessionToError`/
+  `recoverRotatedSessionCookie`) the human-session bullet above composes,
+  for any guard combining rotation with a later check.
 - `admin-service-authentication` — the sign/exchange/call service-credential
   flow layer 6's server-to-server bullet describes, when the remote backend
   is itself `@zanix/admin`-shaped.
+
+To prove a real instance of this pattern still works end to end — not just
+that its unit tests pass against a mocked hub client — see
+`zanix-remote-api-app-e2e-validation`'s own runbook: three real processes
+(business service, admin hub, consumer app), driven with `curl` through a
+full CRUD cycle. That's a maintainer-only validation task, not part of
+building a new resource.
 
 ## Checklist before calling a new resource's vertical slice done
 

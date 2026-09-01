@@ -69,6 +69,13 @@ application of the matching skill, not as a templated recipe.
   SMTP connector (`defs.ts`/`connector.ts`/`pool.ts`); check for an
   accidental import cycle between the new connector's own files before
   assuming a multi-file split is safe just because it compiles.
+  **If the new connector's own real npm client library is anything beyond
+  the already-shared `@aws-sdk/client-s3`/`redis`/`mongoose` this package
+  already depends on** → `deno-lazy-dependency-pattern`. `datamaster` itself
+  already has this exact latent risk today (all three declared at the
+  top-level `imports`, despite 10 real `exports` subpaths) — don't add a
+  fourth heavy dependency the same way; check whether the new one needs the
+  conditional-dependency treatment instead.
 - **Adding a new model** → `datamaster-database-and-models`, plus
   `datamaster-data-protection` if any field needs protecting, plus
   `datamaster-triggers` if the model needs reactive actions.
@@ -122,6 +129,18 @@ application of the matching skill, not as a templated recipe.
   or any other Bucket-A/C finding), file it automatically via `zanix
   report-issue` per that skill's rules — don't just mention it in your
   report and let it evaporate once the conversation ends.
+- **Always**, whenever the change adds or edits a comment/JSDoc →
+  `documentation-voice` — present tense, no reference to an authoring
+  session, a plan, or a phase/stage of work. A GitHub issue number or URL
+  cited as the reason a line exists falls under that same rule. Confirmed
+  real: a fix here once left `(issue #2 — ...)` and a raw
+  `github.com/.../issues/2` link inside JSDoc explaining why a change was
+  made, instead of just describing the resulting behavior — caught by a
+  human, not by this checklist, because this section didn't cite the skill
+  before. It's fine (and this package's own existing style) to explain that
+  something "used to X, now does Y" as behavioral rationale for future
+  maintainers — what's not fine is pointing at the tracker/session that
+  produced the change.
 
 ## Don't drag a documented pattern into a skill/change uncritically
 

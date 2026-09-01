@@ -86,7 +86,7 @@ structure. One-line purpose is each skill's own frontmatter `description`
 (condensed); see [README.md](./README.md) for the fuller version and any
 skill's own `SKILL.md` for the real thing.
 
-### `universal/` — 7 skills, all Shared
+### `universal/` — 9 skills, all Shared
 
 Stack-agnostic engineering discipline; nothing here is Zanix-specific, so
 the maintainer/consumer split doesn't apply to any of them individually.
@@ -94,6 +94,8 @@ the maintainer/consumer split doesn't apply to any of them individually.
 | Skill | Audience |
 | --- | --- |
 | [`complete-test-coverage`](.claude/skills/universal/complete-test-coverage/SKILL.md) | Shared |
+| [`deno-lazy-dependency-pattern`](.claude/skills/universal/deno-lazy-dependency-pattern/SKILL.md) | Shared — every confirmed case grounding it happened in a Zanix repo, but the mechanism (Deno's `nodeModulesDir: "auto"` + module-graph reachability) is general to any Deno/JSR package |
+| [`deno-workspace-link-pitfalls`](.claude/skills/universal/deno-workspace-link-pitfalls/SKILL.md) | Shared — same caveat as `deno-lazy-dependency-pattern`, split out from it 2026-08-25; applies to any Deno monorepo linking an unpublished sibling package pre-publish |
 | [`docs-readme-audit`](.claude/skills/universal/docs-readme-audit/SKILL.md) | Shared (scoped to publishable packages — see README's own caveat paragraph) |
 | [`documentation-voice`](.claude/skills/universal/documentation-voice/SKILL.md) | Shared |
 | [`feature-completeness-conventions`](.claude/skills/universal/feature-completeness-conventions/SKILL.md) | Shared |
@@ -101,7 +103,7 @@ the maintainer/consumer split doesn't apply to any of them individually.
 | [`naming-and-structure-conventions`](.claude/skills/universal/naming-and-structure-conventions/SKILL.md) | Shared — its own description flags that its "Known current gaps" list is specific to the 12 audited library repos and doesn't describe a consumer project; the casing rules themselves apply identically to both |
 | [`release-management`](.claude/skills/universal/release-management/SKILL.md) | Shared |
 
-### `ecosystem/` — 11 skills
+### `ecosystem/` — 12 skills
 
 Rules that cross more than one Zanix package. This is the tier the task's
 own ground truth targets, and it's genuinely mixed, not uniformly one tag.
@@ -117,6 +119,7 @@ own ground truth targets, and it's genuinely mixed, not uniformly one tag.
 | [`zanix-local-api-vs-aggregator`](.claude/skills/ecosystem/zanix-local-api-vs-aggregator/SKILL.md) | **Maintainer** | "Use before writing a new controller in any Zanix library package" — its own description. |
 | [`zanix-observability-conventions`](.claude/skills/ecosystem/zanix-observability-conventions/SKILL.md) | Shared | Own description: "in a library repo or a consumer project," explicitly. |
 | [`zanix-remote-api-app-pattern`](.claude/skills/ecosystem/zanix-remote-api-app-pattern/SKILL.md) | **Consumer** | "Use when scaffolding or reviewing a `@zanix/space` app that consumes another service's admin/API surface" — its own description; grounded in `@zanix/console` as the cited precedent, not the pattern's own subject. |
+| [`zanix-remote-api-app-e2e-validation`](.claude/skills/ecosystem/zanix-remote-api-app-e2e-validation/SKILL.md) | Shared | A real-network runbook (three live processes, driven with `curl`), not architecture guidance — a maintainer regression-proofing a library change and a consumer team validating their own hub/service/app trio before shipping run the identical recipe; the hub is something any team following the pattern runs themselves, not a single Zanix-owned service. |
 | [`zanix-server-conventions`](.claude/skills/ecosystem/zanix-server-conventions/SKILL.md) | **Consumer** | "Building/reviewing backend microservices **on** `@zanix/server`" — the consumer-side counterpart `server-builder` itself points to for anything that isn't extending `@zanix/server`'s own internals. |
 | [`zanix-test-tier-conventions`](.claude/skills/ecosystem/zanix-test-tier-conventions/SKILL.md) | Shared | Every real Zanix repo (library and consumer) has a real `@tests/{unit,integration,functional}/` structure — loaded by every builder plus `testing-validation`/`zanix-feature-builder`, refined by a repo's own more specific testing skill (`cli-generator-testing`) when one exists. |
 

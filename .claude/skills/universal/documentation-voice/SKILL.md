@@ -37,6 +37,16 @@ apply, kept in one place so it can't drift between them.
   does. The violation is the framing, not whether the narrative sits in this
   comment or one hop away in another document. State the real mechanism or
   reason directly instead of pointing at where it was explained once.
+- **Never cite an internal Claude Code skill by name in a real package's shipped source** — a
+  skill like `deno-lazy-dependency-pattern` is authoring tooling for THIS workflow; it isn't
+  published, isn't part of the package, and a JSR consumer or engineer reading the real code has
+  no way to open it. This is worse than the CHANGELOG/PR-laundering case above (that at least
+  points somewhere the reader CAN reach) — it points at something that doesn't exist for them at
+  all. Confirmed real, not hypothetical: `(see the deno-lazy-dependency-pattern skill)` shipped
+  into 18 real source files across 7 Zanix package repos before being caught. State the actual
+  mechanism/reason directly in the comment instead (e.g. describe what `nodeModulesDir: "auto"`
+  does, don't cite the skill that explains it) — the same "state the real reason, don't point
+  elsewhere" fix as the CHANGELOG case, just for a strictly worse pointer.
 - **Genuine engineering rationale is not session narrative, and stays.** "Two
   decoders because cliffy's `.option()` narrows per call" is a real, still-true
   reason worth keeping — the distinction is between a fact that explains

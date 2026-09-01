@@ -50,14 +50,26 @@ correct for both React and Preact, since `children`'s default type
 (`LayoutProps<ReactNode>`/`LayoutProps<ComponentChildren>`) only for
 something `SpaceChildren` doesn't express.
 
-**`error.tsx`'s real current limitation**: React's server renderer only
-recovers a thrown error for content inside a `Suspense` boundary, which
+**`error.tsx`'s real recovery path, per renderer**: React's server renderer
+only recovers a thrown error for content inside a `Suspense` boundary, which
 `SpacePageController` always adds around a page, so a thrown error keeps the
-response at a real `200` instead of breaking the whole document. The
-fallback's own UI, however, only becomes visible after client hydration —
-there is no visible fallback content during the initial server-rendered
-response yet. Don't assume `error.tsx` renders anything visible server-side
-today; it only protects the response from breaking.
+response at a real `200` instead of breaking the whole document. The two
+renderers differ in when the fallback's own UI actually becomes visible:
+
+- **Preact**: `SpaceErrorBoundary.render()` runs during the real SSR
+  response (`preact-render-to-string` with `options.errorBoundaries = true`),
+  so the fallback's markup is visible synchronously in the server-rendered
+  HTML, with zero client JS required.
+- **React**: the SSR response ships a postponed-recovery marker instead of
+  the real error; the fallback becomes visible once the client hydrates.
+  Every auto-generated client entry calls `hydrateComets();
+  hydrateErrorBoundaries(); initOrbit();` automatically
+  (`client-entry-plugin.ts`), so this happens on every page load with no
+  extra wiring — not an unimplemented gap.
+
+`reset` on `ErrorBoundaryProps`, once interactive on either renderer, is
+always `retryOutlet` — a real re-fetch/swap of the current page, never a
+local re-render of just the boundary's children.
 
 ## Document shell: root layout vs. default document
 
@@ -176,6 +188,54 @@ full document; Orbit's client runtime degrades gracefully on any non-`ok`
 fragment response via a plain `location.href` navigation — one wasted
 round-trip, nothing broken.
 
+### Composing multiple `onError` handlers
+
+`ssr.onError` accepts exactly one handler — but a real app routinely needs
+more than one concern wired there, e.g. `createNotFoundHandler()` above
+alongside something app-specific. `globalErrorHandler(...handlers)` composes
+several into one: each handler is tried in order against the same thrown
+error, and the first one that returns a real `Response` wins.
+
+```ts
+// main.ts
+import { createNotFoundHandler, globalErrorHandler } from '@zanix/space'
+import { recoverRotatedSessionCookie } from '@zanix/auth'
+import { bootstrapServers } from '@zanix/server'
+
+await bootstrapServers({
+  ssr: {
+    application: 'storefront',
+    onError: globalErrorHandler(recoverRotatedSessionCookie(), createNotFoundHandler()),
+  },
+})
+```
+
+A handler that returns `undefined` (the same "not handled, fall through"
+convention `createNotFoundHandler()`'s own returned function already
+follows) is skipped, exactly as if it were never in the list. If every
+handler declines, so does the composed one, falling through to
+`@zanix/server`'s own default error response unchanged. Order is entirely
+the caller's choice — this composer imposes no priority of its own; a
+handler that only recognizes one specific error shape (like
+`createNotFoundHandler()`'s own `HttpError('NOT_FOUND')` check) is naturally
+safe to place anywhere in the list, since it already returns `undefined`
+for everything else.
+
+`recoverRotatedSessionCookie()` (`@zanix/auth`) above is the real motivating
+case for this composer: a guard that rotates a session token and then
+throws later in the same chain never delivers the replacement cookie
+through the normal response path, since `@zanix/server`'s own guard
+pipeline skips its registered response interceptors on a thrown error —
+that recovery function reads the rotated token back off the error and
+reattaches it here instead. See `auth-jwt-and-sessions`'s own "Guard-stage
+rotation recovery" for the guard-side half of this pattern
+(`attachRotatedSessionToError`) — not restated here.
+
+Write a handler meant for this composer against `ComposableErrorHandler`
+(`(error: unknown) => Response | Promise<Response> | undefined`), not
+`OnErrorHandler` — `createNotFoundHandler()`'s own return value already
+satisfies it structurally, no cast needed at the call site.
+
 ## Activation
 
 ```ts
@@ -220,8 +280,9 @@ Always the `@zanix/space/testing` subpath, never the package root.
 ## Checklist before adding/changing a route
 
 - [ ] Does the file convention match the segment's real role (`page.tsx`
-      never doubling as a `layout.tsx`, `error.tsx` not assumed to render
-      visible fallback content server-side)?
+      never doubling as a `layout.tsx`, `error.tsx`'s server-visible fallback
+      assumed only under the Preact renderer, never React's — see the
+      per-renderer recovery-path split above)?
 - [ ] If a root `layout.tsx` is added/changed, does it own only document
       structure — no head-related prop, no assumption about what
       `@zanix/space` injects into `<head>`?
@@ -229,6 +290,11 @@ Always the `@zanix/space/testing` subpath, never the package root.
       deliberately, with the security trade-off of the latter actually
       considered — not copied from another project without checking whether
       this app's `onError` chain is safe to receive the raw `Request`?
+- [ ] Does more than one concern need `onError` (not-found recovery plus
+      something app-specific, e.g. `@zanix/auth`'s
+      `recoverRotatedSessionCookie()`)? Compose them with
+      `globalErrorHandler(...)` instead of picking only one or hand-writing
+      the try-each-in-order loop.
 - [ ] Does a new page's test use `mockPageContext` (unit) or
       `renderPageForTest` (functional) as appropriate, from
       `@zanix/space/testing` — not a hand-rolled context object?

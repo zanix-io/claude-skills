@@ -59,7 +59,7 @@ for JSONC-style config files, not for sanitizing untrusted code."
 
 `zanixConstants` (frozen default export, `/constants` subpath) — includes
 `CONFIG_FILE` (`'deno.json'`), `DISTRIBUTION_FILE`, `MAIN_MODULE`,
-`ZNX_FLAGS` (`['use comet']` — what `utils-linter-plugins`'s
+`ZNX_FLAGS` (`['use comet', 'server-only']` — what `utils-linter-plugins`'s
 `use-znx-flags` rule validates against), `ZANIX_LOGO`.
 
 `zanixRegex` (frozen default export, `/regex` subpath) — `EMAIL_REGEX`,

@@ -124,16 +124,15 @@ file, so prefer that path over a hand-rolled `svgo` config.
 
 **`--icons` scaffolding**: a `--icons` convenience flag for `zanix new
 space`/`zanix new spacecraft` that scaffolds this catalog into a project's
-own `assets/icons/` and generates a pre-wired wrapper is already implemented
-in `@zanix/cli` (`space-icons.ts`'s `copyIconCatalog`/
-`writeIconCatalogFiles`/`writeCatalogIconWrapper`, forwarded from both
-`newSpaceAction` and `newSpacecraftAction`). It's gated at runtime, not at
-the flag: `resolveSpaceUiVersion()` throws until `@zanix/space-ui` itself
-publishes to JSR (`ZANIX_DEPENDENCY_VERSIONS` deliberately has no entry for
-it yet) — so invoking `--icons` today fails loud with that explanation
-rather than silently fetching a wrong or "latest" version. Don't assume it
-scaffolds successfully until `@zanix/space-ui` has published; the flag and
-scaffold logic themselves are real, finished code.
+own `assets/icons/` and generates a pre-wired wrapper is implemented in
+`@zanix/cli` (`space-icons.ts`'s `copyIconCatalog`/`writeIconCatalogFiles`/
+`writeCatalogIconWrapper`, forwarded from both `newSpaceAction` and
+`newSpacecraftAction`). `@zanix/space-ui` is a real, published JSR package
+(published `0.1.0` onward; `ZANIX_DEPENDENCY_VERSIONS` in `@zanix/cli`'s own
+`src/utils/config/dependencies.ts` carries a real `'@zanix/space-ui'` entry)
+— `resolveSpaceUiVersion()`'s throw is a permanent gate against that entry
+ever going missing (see that function's own doc), not a "not published yet"
+placeholder — `--icons` fetches and scaffolds the real catalog today.
 
 ## Checklist before working with icons
 
@@ -144,10 +143,10 @@ scaffold logic themselves are real, finished code.
       with `svgo`, is the `preserve` option (or `@zanix/space`'s
       `optimize: { svg: true }`) actually applied — not a bare default
       config that would silently strip every symbol id?
-- [ ] Does anything assume `zanix new space --icons` scaffolds the catalog
-      today? The flag and scaffold logic are implemented in `@zanix/cli`,
-      but `resolveSpaceUiVersion()` still throws until `@zanix/space-ui`
-      itself has published to JSR — it won't actually succeed until then.
+- [ ] If citing `resolveSpaceUiVersion()`'s throw path, is it described as
+      the permanent "entry ever went missing" gate it actually is — not as
+      a "not published yet" placeholder (`@zanix/space-ui` is a real,
+      published JSR package; `--icons` scaffolds successfully today)?
 - [ ] If adding a new name to a project's own catalog, is it added to that
       project's own `viewBoxByName` map (never to this package's closed
       `CATALOG_VIEWBOX`, which isn't extensible from outside)?

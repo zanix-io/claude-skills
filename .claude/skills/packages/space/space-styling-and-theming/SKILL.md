@@ -9,6 +9,17 @@ plugs into, see `space-middleware-and-security`; for `population`, the axis
 File:line references point at `~/Documents/Development/ZanixLibraries/space`
 — read the real code there before assuming this summary is still accurate.
 
+Starting a NEW consumer project: `zanix new space|spacecraft --theme
+default|astronaut` scaffolds a real starting `theme/` — `default`
+(`@zanix/space-ui`'s own primitive/semantic token set, byte-for-byte synced
+from that package's `theme/tokens.css`/`theme/space-defaults.css`, see
+`space-ui-styling`) or `astronaut` (the same base plus its own interactive
+Comet demo). Independent of `--template`/`--icons`/`--pages`/`--renderer` —
+composes freely with any of them; omit `--theme` entirely to start with no
+seeded palette (the "no seeded palette ships by default" default below). An
+EXISTING project adding/changing tokens still follows this skill directly,
+not the scaffold flag.
+
 ## Golden rule (token savings)
 
 - A component consumes semantic tokens (`var(--space-color-primary)`), never

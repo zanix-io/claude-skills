@@ -36,6 +36,8 @@ scope this genuinely applies to?_
 | `release-management`               | CHANGELOG discipline, semver classification, and the branch → commit → push → tag sequence once a change is ready to ship.                                                                                                             |
 | `documentation-voice`              | English-only, present-tense voice for JSDoc/docs/code — no session, plan, or phase/stage narrative, with a real `@deprecated` exception. Referenced by `jsdoc-jsr-audit`, `docs-readme-audit`, and `feature-completeness-conventions`. |
 | `naming-and-structure-conventions` | Folder/file casing, test-file naming, constant-vs-behavior casing, the env-var `_ENV` constant-naming shape, and the `X-Znx-` HTTP header/cookie naming shape — the naming/structure rules uniform across every Zanix repo.             |
+| `deno-lazy-dependency-pattern`     | Declaring a genuinely conditional/optional dependency in a published Deno/JSR package without `nodeModulesDir: "auto"` eagerly materializing its npm packages for every consumer — the `lazyFunction`/`lazyClass`/`lazyValue` pattern, the `import type` gotcha, and when to fix the source package's own export shape instead. |
+| `deno-workspace-link-pitfalls`     | TEMPORARILY linking an unpublished sibling package via a raw relative-path override to test a fix before publish — `scopes` alias collisions, the exact prefix depth a `scopes` key needs, per-subpath override coverage, and unrelated sibling directories getting silently auto-linked. |
 
 **`ecosystem/`**
 
@@ -50,6 +52,7 @@ scope this genuinely applies to?_
 | `zanix-issue-reporting`          | When/how to file a real GitHub issue via `zanix report-issue` — the three-bucket rule for what gets reported vs. stays chat-only, repo detection, title/body shape.                               |
 | `zanix-test-tier-conventions`    | Which of unit/integration/functional a new test belongs in — the real default every `zanix new`-scaffolded project gets, refined per-repo by a more specific testing skill when one exists.       |
 | `zanix-remote-api-app-pattern`   | The layered pattern for a `@zanix/space` app that owns no data of its own and builds UI against a remote, typed Zanix API — resource descriptor, thin client, pages, presentation, auth — grounded in `@zanix/console`'s real Triggers/Templates slices. |
+| `zanix-remote-api-app-e2e-validation` | Runbook for standing up a real, unmocked instance of the pattern above (business service + admin hub + console, three real processes) and driving it with `curl` through login and a full Triggers/Templates CRUD cycle — the only path that exercises the real network boundary every automated test in this area mocks. Applies the same way to a maintainer regression-proofing a library change and a consumer team validating their own trio before shipping. |
 | `skill-and-agent-authoring`      | How this repo's own skills/agents get created and maintained — tier placement, the real symlink mechanism, the validation discipline, cross-agent boundary upkeep.                                |
 | `zanix-agent-dispatch-discipline`| How to safely dispatch this repo's own agents — the standing gate that a named agent must actually run the work, the new-agent-type registration delay, concurrent same-repo dispatch verification, cross-session coordination. |
 

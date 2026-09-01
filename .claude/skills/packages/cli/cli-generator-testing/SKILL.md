@@ -69,11 +69,28 @@ code there before assuming this summary is still accurate.
   more than one generator or more than one project type: preset equivalence and
   fail-fast-on-unknown-preset across all five project types, tree-shape
   assertions, `docker`/`github` scaffold checks (`zanix prepare`), `build`
-  checks. **This is also the real, confirmed precedent for a single-leaf
-  top-level command's own tests** (`build.test.ts` calls
-  `compileAndObfuscate` directly, doing real file I/O rather than fully
-  mocking it) — a new command shaped like `build`/`prepare` (not a
-  `generate`/`new` leaf) belongs here by default, not in `unit/`.
+  checks. Every top-level command (including a new one) also gets a basic
+  "is correctly registered/errors without a subcommand" check in
+  `integration/commands.test.ts`, regardless of where its real logic is
+  tested.
+  **A single-leaf top-level command's own real-logic tests split by internal
+  complexity, not by a fixed rule** — `build.test.ts` (`integration/`) calls
+  `compileAndObfuscate` directly with real file I/O, appropriate for a
+  command with no real internal module structure of its own. `report-issue`,
+  `credentials mesh`, and `check-cycles` are the real, more-recent
+  counter-example: each decomposes into its own real internal modules
+  (`report-issue/lib/github-issue.ts`; `credentials/mesh/{keys,render,
+  validate}.ts`; `check-cycles/lib/{path,report,side-effects/analyze-file}.ts`)
+  and each of THOSE gets its own `unit/commands/<command>/...` test file,
+  mirroring the source layout the same way a `generate/<artifact>/` module
+  does — not a single flat `integration/` file. `check-cycles/lib/graph.ts`
+  gets both: a `unit/` test for the pure Tarjan SCC algorithm and a separate
+  `integration/commands/check-cycles/lib/graph.test.ts` for the real,
+  file-I/O-backed graph-building step. **The rule that actually holds**: does
+  the command have real internal modules worth testing independently? If yes,
+  mirror them under `unit/` like a generator would; a flat `integration/`
+  file is for a command simple enough not to need that split, not the
+  default for every single-leaf command.
 - **Functional** (`src/@tests/functional/`) — real CLI subprocess runs producing
   real files on disk (`commands.new.test.ts`, `commands.generate.test.ts`,
   `commands.prepare.test.ts`, a JSR-fetch test for the `library` exception).
@@ -81,16 +98,20 @@ code there before assuming this summary is still accurate.
   just its internal functions.
 
   **Known real gap, don't silently replicate it as a new "no functional test"
-  precedent**: as of this writing, none of the 6 frontend artifacts
+  precedent**: as of this writing, none of the 6 original frontend artifacts
   (`comet`/`page`/`layout`/`error`/`loading`/`not-found`) has its own
   functional-test entry, even though this checklist requires one — only the
-  backend artifacts do. When adding a NEW frontend-family artifact, add the
-  functional test anyway (the checklist's own letter, and the shape every
-  backend generator already follows) rather than matching the immediate sibling
-  family's gap — a gap repeated by every new addition never closes. If a future
-  task is specifically about closing this gap for the existing 6, that's real,
-  separate, in-scope work, not something to bundle silently into an unrelated
-  generator addition.
+  backend artifacts do. `component` (a later frontend addition) got the real
+  counter-example right — it has its own functional test
+  (`commands.generate.test.ts`) despite being frontend-family — proving the
+  gap is fixable per-artifact without waiting for a dedicated cleanup task.
+  When adding a NEW frontend-family artifact, add the functional test anyway
+  (the checklist's own letter, `component`'s own precedent, and the shape
+  every backend generator already follows) rather than matching the original
+  6's gap — a gap repeated by every new addition never closes. If a future
+  task is specifically about closing this gap for the remaining 6, that's
+  real, separate, in-scope work, not something to bundle silently into an
+  unrelated generator addition.
 
 ## The Validation step, concretely
 
@@ -117,9 +138,13 @@ still applies on paper, but confirm this before treating it as a real blocker**:
 as of this writing, `deno doc --lint` fails on every existing generator's own
 source in this package (not the generator's _output_ —
 `command.ts`/`template.ts` themselves), for reasons outside any single
-generator's scope (undocumented interface fields, `Commander` not exported from
-`cli.ts` for a JSDoc `@link` to resolve). No task or CI in this repo currently
-runs this check. Before spending effort "fixing" this for a new generator
+generator's scope: undocumented interface fields, and `Commander` (exported
+from `cli.ts`, confirmed real — `export { Commander }`) being unreachable
+from `mod.ts`, the package's only declared `deno.jsonc` entrypoint, so a
+JSDoc `@link` to it can't resolve when `deno doc --lint` is run against the
+real entrypoint (`deno doc --lint mod.ts` itself passes clean — the failure
+only shows up linting a generator's own source file directly). No task or
+CI in this repo currently runs this check. Before spending effort "fixing" this for a new generator
 specifically, run the same `deno doc --lint` against one sibling generator's own
 file — if the failure is the identical pattern, it's pre-existing and out of
 scope (same differential-check discipline as any other pre-existing failure
@@ -141,9 +166,13 @@ hand, chosen to hit every distinct code path rather than exhaustively.
 
 - [ ] Does a unit test exist at the path mirroring the generator's own module
       location, not just somewhere in the suite?
-- [ ] For a brand-new, non-generator top-level command: does its test
-      follow `build.test.ts`'s real precedent (`integration/`, real I/O)
-      rather than being placed in `unit/` by default?
+- [ ] For a brand-new, non-generator top-level command: does it have a basic
+      registration check in `integration/commands.test.ts`, and — if it has
+      real internal modules of its own — a `unit/` test per module mirroring
+      the source layout (`report-issue`/`credentials mesh`/`check-cycles`'s
+      real precedent), rather than one flat `integration/` file by default
+      (that shape is for a command simple enough not to need the split, like
+      `build`)?
 - [ ] For a DSL-based generator (parser/renderer split), are both halves tested
       independently, not just the combined output?
 - [ ] Does a functional test exercise the real CLI subprocess for at least the

@@ -36,6 +36,11 @@ real inconsistency you're not fixing as part of this release (an entry that
 doesn't match what actually shipped, a version mismatch across coordinated
 repos), file it (Bucket A) rather than only noting it in your own report.
 
+Also `documentation-voice` — a CHANGELOG entry is exactly the kind of
+published content it governs: present tense, no reference to an authoring
+session, a plan, or a tracker/issue number (see `datamaster-builder`'s own
+skill entry for the real incident this guards against).
+
 ## When you're handling more than one repo at once
 
 This is the case a single inline session usually doesn't reach for: a

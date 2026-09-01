@@ -1,6 +1,6 @@
 ---
 name: utils-config-and-project-helpers
-description: Config file read/save (with its in-memory cache, and resetConfig to clear it in a test), path/temp-folder helpers, the global Zanix/Znx namespace accessors (including its lazy config getter), mockWrap for source-rewriting test doubles, and which project-scaffolding types/functions moved to @zanix/cli and no longer live here. Use when reading/writing deno.json(c) programmatically, resolving a path relative to a module, or mocking a dependency in a test.
+description: Config file read/save (with its in-memory cache, and resetConfig to clear it in a test), path/temp-folder helpers, the global Zanix/Znx namespace accessors (including its lazy config getter), mockWrap for source-rewriting test doubles, lazyFunction/lazyClass/lazyValue for deferring a genuinely conditional dependency's real import, and which project-scaffolding types/functions moved to @zanix/cli and no longer live here. Use when reading/writing deno.json(c) programmatically, resolving a path relative to a module, mocking a dependency in a test, or wiring a dependency a consumer might never actually use.
 ---
 
 Covers `@zanix/utils/helpers`'s config/path/Zanix-namespace utilities and
@@ -116,22 +116,55 @@ footgun behind `@zanix/utils`'s own `namespace.test.ts`/`logger.test.ts` —
 order matters, and importing the logger module anywhere in a test run
 seeds the global for every test after it.
 
+## `lazyFunction`/`lazyClass`/`lazyValue`: deferring a genuinely conditional dependency
+
+```ts
+import { lazyFunction, lazyClass, lazyValue } from 'jsr:@zanix/utils@[version]/helpers'
+
+const registerJob = lazyFunction<typeof import('@pkg').registerJob>('jsr:@pkg@version', 'registerJob')
+const createConnector = lazyClass<typeof SomeConnector>('jsr:@pkg@version', 'SomeConnector')
+const getDefault = lazyValue<string>('jsr:@pkg@version', 'DEFAULT_NAME')
+```
+
+Each defers `import(specifier)` until the wrapper it returns is actually invoked — never at import
+time. `lazyFunction` resolves and calls a real exported function; `lazyClass` resolves a real
+exported class and returns an async FACTORY (can't lazily `new` something only available after an
+`await`); `lazyValue` resolves a plain constant via a thunk, relying on Deno's own module cache to
+dedupe repeated calls, not a caching layer of its own. `specifier` must be a fully-qualified
+`jsr:pkg@version`/`npm:pkg@version` string, kept OUTSIDE the caller's own `deno.json` `imports` map
+— see [[deno-lazy-dependency-pattern]] for the full mechanism (why a bare alias alone triggers
+`nodeModulesDir: "auto"`'s eager materialization, the real `import type` gotcha that trips this up
+even for a pure type reference, and when this pattern doesn't apply at all).
+
 ## Moved to `@zanix/cli` — no longer in this package
 
-`getZanixPaths`, `getAllZanixLibrariesInfo`, `getLatestVersion`/
-`getLatestRelease`, `ZanixTree` (and its `getServerSrcTree`/
-`getSpaceSrcTree`/`getLibrarySrcTree` builders), `prepareGithub`,
-`createVSCodeConfig` — all project-tree scaffolding and GitHub/editor
-bootstrapping runtime implementations. Anything referencing these from
-`@zanix/utils` is stale; see `@zanix/cli`'s own `engineering.md` §5/§7 for
-where they live now. The `Zanix*SrcTree`/`ZanixFolderTree`/`ZanixLibraries`
-**types** (no runtime implementation) still live in `@zanix/utils/types`.
-Repository-bootstrapping option types
-(`BaseEditorHelperOptions`/`BaseGithubHelperOptions`/`Editors`/
+`getZanixPaths`, `ZanixTree` (and its `getServerSrcTree`/`getSpaceSrcTree`/
+`getLibrarySrcTree` builders), `prepareGithub`, `createVSCodeConfig` — all
+project-tree scaffolding and GitHub/editor bootstrapping runtime
+implementations. Anything referencing these from `@zanix/utils` is stale; see
+`@zanix/cli`'s own `engineering.md` §5/§7 for where they live now. The
+`Zanix*SrcTree`/`ZanixFolderTree`/`ZanixLibraries` **types** (no runtime
+implementation) still live in `@zanix/utils/types`. Repository-bootstrapping
+option types (`BaseEditorHelperOptions`/`BaseGithubHelperOptions`/`Editors`/
 `HookOptions`/`PreCommitHookOptions`/`PrepareGithubOptions`/
 `WorkflowOptions`) and `CompilerOptions` (tied to a removed
 `compileAndObfuscate`) moved too — referencing them from
 `@zanix/utils/types` also fails.
+
+**Two symbols that look like they'd be on the list above aren't, for
+different reasons — don't assume either still exists somewhere.**
+`getLatestRelease` was **not** migrated to `@zanix/cli` with the rest of this
+cluster — it was confirmed unused anywhere in the ecosystem and deleted
+outright (`@zanix/utils`'s own `CHANGELOG.md` `[2.5.0]` entry). `cli`'s
+`getLatestVersion`/`getZanixLibraryVersion` (`commands/new/lib/tree/info.ts`)
+are unrelated functions that happen to serve a similar purpose (fetching a
+library's latest published version from Shields.io), not a renamed
+continuation of it. `getAllZanixLibrariesInfo` genuinely was migrated to
+`@zanix/cli` in the same move, but has since been deleted from `cli` too —
+it had zero real consumers once `getZanixTemplateContent` was migrated to
+the one-library-at-a-time `getZanixLibraryVersion` (`cli`'s own
+`CHANGELOG.md` `[Unreleased]` entry) — so it no longer exists in either
+package. Don't cite it as living in `@zanix/cli`.
 
 ## `generateUUID`
 
@@ -198,3 +231,7 @@ apply everywhere the identifier appears, not just where it's called.
 - [ ] For `mockWrap`, does the mock need `force: true` — are there plain
       (non-call-site) references to the mocked identifier in the wrapped
       function that also need substituting?
+- [ ] Wiring a dependency only some consumers/manifests actually use —
+      `lazyFunction`/`lazyClass`/`lazyValue` instead of a hand-rolled
+      `await import()`, and the source package's own `imports` map checked
+      first (see [[deno-lazy-dependency-pattern]])?

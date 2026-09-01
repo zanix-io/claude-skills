@@ -56,14 +56,14 @@ Deno.lint.runPlugin(formatPlugin, 'test.ts', `const a = "This is double quoted";
 
 ```ts
 Deno.lint.runPlugin(zanixPlugin, 'test.ts', `'otherFlag'`)
-// [{ id: 'deno-zanix-plugin/use-znx-flags', message: '❌ The flag "otherFlag" is invalid.', hint: 'Review available flags:\n use comet', ... }]
+// [{ id: 'deno-zanix-plugin/use-znx-flags', message: '❌ The flag "otherFlag" is invalid.', hint: 'Review available flags:\n use comet, server-only', ... }]
 ```
 
 Validates the directive-prologue string-literal grammar slot (same
 position as `'use strict'`) against `ZNX_FLAGS` (`jsr:@zanix/utils/constants`
-— currently `['use comet']`, the directive `space-comets` documents). **Only
-checks the very first bare string-literal statement in a file** — a string
-literal appearing anywhere else is ignored, not flagged.
+— currently `['use comet', 'server-only']`, both directives `space-comets`
+documents). **Only checks the very first bare string-literal statement in a
+file** — a string literal appearing anywhere else is ignored, not flagged.
 
 ## Authoring a new rule
 

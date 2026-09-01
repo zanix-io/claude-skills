@@ -116,7 +116,7 @@ Every connector's conditional registration function (`registerMongoConnector`,
 `registerS3Connector` (renamed from `registerSeaweedFSConnector`),
 `registerRedisConnector`, `registerQLRUConnector`, `registerKVConnector`,
 `registerElasticsearchConnector`, `registerCacheProvider`,
-`registerDLQProvider`) is exported from its owning module, reachable via
+`registerDlqProvider`) is exported from its owning module, reachable via
 `@zanix/datamaster/core` — not just a private side effect run once at import
 time. It still runs automatically on import, same as always; the export adds a
 second way to invoke it: **re-registering after clearing the relevant registry**
@@ -191,19 +191,22 @@ checklist before building this — it also covers the hard-rename migration
 cost (grepping every OTHER Zanix repo for an import of whatever old
 per-backend vars get removed) that both real fixes here had to account for.
 
-## One remaining future/placeholder connector, verified empty — not stale docs
+## Postgres is not a placeholder connector — it was removed, not "coming soon"
 
-`database/providers/postgres/` exists as a real directory in source but contains
-**zero files** — this genuinely means "documented as coming soon, not yet
-implemented," not a doc that quietly fell behind a real implementation. Confirm
-this with a directory listing before assuming it has any real code to reference
-— it's an easy claim to get wrong by assuming a directory implies an
-implementation. `cache/providers/memcached/` was this same kind of placeholder
-until it shipped a real connector (`ZanixMemcachedConnector`,
-`cache/providers/memcached/core.ts`) — a genuine precedent that these
-placeholders do eventually get filled in, not permanent fixtures; re-verify with
-a fresh directory listing before trusting this section at all, the same
-discipline that caught memcached's own staleness.
+There is no `database/providers/postgres/` directory (empty or otherwise) —
+Postgres support was never functional (its only real usage,
+`seedProcessor.postgress` in `utils/seeders/adaptation.ts`, was a hardcoded
+`throw new Error('Not implemented')`), and `DatabaseTypes`
+(`database/typings/general.ts`) was narrowed to the single literal `'mongo'`
+once that placeholder member was removed (breaking, type-level only —
+`CHANGELOG.md`'s `[0.6.0]` entry). Don't cite a Postgres directory as an
+existing-but-empty placeholder connector; confirm with a fresh directory
+listing before assuming otherwise, the same discipline that caught this
+section's own staleness. `cache/providers/memcached/` is the precedent for a
+*genuine* placeholder-to-real transition (it shipped `ZanixMemcachedConnector`,
+`cache/providers/memcached/core.ts`, after a real empty-placeholder phase) —
+but "a directory exists and is empty" and "the feature was scoped out
+entirely" are two different states, and Postgres is now the latter.
 
 ## Every public command method must gate on `isReady` first
 

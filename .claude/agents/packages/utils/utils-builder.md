@@ -53,6 +53,11 @@ mechanism itself is not.
   workflow is simple enough not to need one — see `skill-and-agent-authoring`'s
   own "don't over-create" principle) — instead, read the closest sibling
   file in `src/utils/*.ts` directly as the template.
+- **Touching `lazyFunction`/`lazyClass`/`lazyValue`** (`src/utils/lazy-import.ts`,
+  exported via `/helpers`) → `deno-lazy-dependency-pattern`, always — this
+  package OWNS the helpers every other Zanix package's own lazy-dependency
+  fix is built on; a change here has ecosystem-wide reach, not just this
+  package's own tests.
 - **New validation decorator** → `utils-validator-core` for the underlying
   `defineValidationDecorator` primitive and the `expose`/`transform`/
   `optional` mechanics every decorator sits on (read, don't touch — that
@@ -72,7 +77,11 @@ mechanism itself is not.
   `utils-linter-plugins` documents, not just an in-process unit test of the
   rule function), `zanix-issue-reporting` (anything real found but not
   fixed in this change — including a request that turns out to need
-  architectural work outside this agent's scope).
+  architectural work outside this agent's scope), and `documentation-voice`
+  (present tense, no reference to an authoring session, a plan, or a
+  tracker/issue number in any new/changed comment or JSDoc — see
+  `datamaster-builder`'s own skill entry for the real incident this guards
+  against).
 
 ## Adding a new lint rule or auto-fix, concretely
 

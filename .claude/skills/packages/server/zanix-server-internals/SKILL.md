@@ -53,6 +53,24 @@ shape:
    activation code starts asking "what Application is this" or "is this
    anchored," composition logic has leaked into the wrong layer.
 
+**Activation-layer state that must survive a post-boot rebuild uses a frozen
+box, swapped atomically — never mutated in place.** `WebServerManager`'s
+`#handlers` (`modules/webserver/manager.ts`) is one `HandlerBox` per port,
+each holding a `current` dispatch table built with `Object.freeze({...})`;
+`create()` never mutates an existing table, it always builds a brand-new one
+and reassigns `box.current`. `refreshRoutes(id)` (same file) is the reference
+precedent for a mechanism that needs to recompile its own activation-time
+output later, without rebinding the real `Deno.serve()` listener or losing
+requests mid-swap: it recompiles the SAME box's `current` from
+`ProgramModule`'s live registry and reassigns it in one atomic step, so
+`multiplexer` (which dereferences `box.current` fresh per request, never
+closing over a stale snapshot) always sees either the fully-old or
+fully-new table, never a partial one. Any future mechanism whose own
+activation output needs live-rebuild support (a dev-mode hot-reload for a
+registry this package doesn't have yet) should copy this shape — freeze,
+build fresh, atomic reassignment — rather than mutating the existing
+structure or invalidating/rebinding the underlying listener.
+
 **When a mechanism needs to support more than one transport** (Discovery: HTTP
 now, an event bus later), split the resolved-plan layer itself into a
 transport-agnostic piece (`DiscoveryContract` —
@@ -148,7 +166,13 @@ exists and isn't listed above: `'s3'` (blob/object storage,
 `datamaster/src/modules/storage/core.ts`,
 `registerCoreConnectorSlot('s3', ZanixConnector, {sourcePackage:
 '@zanix/datamaster/core'})`) — confirmed real, found only by grepping the
-sibling repos directly, not by reading this file. **Before assuming no close
+sibling repos directly, not by reading this file. A sixth, real, shipped
+provider slot exists too and isn't listed above either: `'dlq'`
+(`datamaster/src/modules/dlq/core.ts`,
+`registerCoreProviderSlot('dlq', ZanixCoreDlqProvider, {sourcePackage:
+'@zanix/datamaster/core'})`) — same shape as `auth`/`notifications`: no
+dedicated `CoreBaseClass` getter, `this.providers.get('dlq')`/
+`this.providers.get(DlqProvider)` is the permanent access pattern. **Before assuming no close
 precedent exists for a new slot, grep
 `registerCoreProviderSlot`/`registerCoreConnectorSlot` across the sibling
 repos yourself** — this list drifts as packages evolve, exactly as this

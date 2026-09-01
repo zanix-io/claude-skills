@@ -103,6 +103,15 @@ assertion's `iss` and `sub`, so a valid signature alone can never be
 presented as a different service's identity — `exchangeServiceCredential`
 requires `sub === iss`.
 
+**`zanix credentials mesh <id1> <id2> ...`** (`@zanix/cli`) automates the
+above for local setup/testing of a multi-identity mesh: generates a real
+PKCS#8 RSA keypair per identity and prints each identity's own
+`JWK_PRI_<id>` alongside every OTHER identity's `JWK_PUB_<id>` it needs to
+register — labeled per process, never a bare unlabeled dump. Requires at
+least 2 identities (a mesh of 1 has nothing to cross-reference). This
+generates real keys for wiring the env vars above; it doesn't call
+`createServiceAssertion`/`exchangeServiceCredential` itself.
+
 For a real overlap window during key rotation, register a `_<keyId>`-suffixed
 form instead of the bare single-key form:
 

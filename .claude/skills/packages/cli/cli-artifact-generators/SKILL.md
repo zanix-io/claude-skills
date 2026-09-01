@@ -66,20 +66,31 @@ on it if enough time has passed that it might have drifted:
 | Concept              | Decorator                                                         | Base class                                                                                              | Library     |
 | --------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ----------- |
 | REST handler          | `Controller({prefix,Interactor})` + `Get/Post/Patch/Delete/Put`    | `ZanixController<I>`                                                                                        | server      |
-| GraphQL handler        | `Resolver({prefix})` + `Query`/`Mutation`                          | `ZanixResolver`                                                                                             | server      |
+| GraphQL handler        | `Resolver({prefix})` + `Query`/`Mutation`                          | `ZanixResolver`                                                                                             | server†     |
 | Socket handler         | `Socket(route)`                                                    | `ZanixWebSocket`                                                                                             | server      |
 | SSR handler            | `SsrController({prefix})` + same method decorators as REST         | `ZanixSsrController`                                                                                         | server      |
 | Interactor             | `Interactor({Connector,Provider})` (optional)                      | `ZanixInteractor<T>`                                                                                         | server      |
 | Provider/repository    | `Provider(type?)`                                                  | `ZanixProvider<T>`                                                                                           | server      |
 | Connector shell        | `Connector({slot?})`                                               | `ZanixConnector` / `ZanixDatabaseConnector` / `ZanixCacheConnector` (by `--slot`)                            | server      |
 | Queue consumer         | `Subscriber(route\|{queue,rto,Interactor})`                        | `ZanixSubscriber`                                                                                            | asyncmq     |
-| Jobs                   | `registerCronJob`/`registerJob` (plain functions, not decorators)  | —                                                                                                            | asyncmq     |
-| DLQ processor          | `registerDLQProcessor` (plain function)                            | —                                                                                                            | asyncmq     |
+| Jobs                   | `registerCronJob`/`registerJob` (plain functions, not decorators)  | —                                                                                                            | asyncmq‡    |
+| DLQ processor          | `registerDLQProcessor` (plain function)                            | —                                                                                                            | asyncmq§    |
 | DB connector (default) | —                                                                  | `ZanixMongoConnector`, `registerModel<Attrs>({name,definition,options,extensions:{seeders},callback})`       | datamaster  |
 | RTO/DTO field          | `@zanix/validator` decorators (`IsString`, `IsEmail`, ...)          | `BaseRTO`                                                                                                     | validator (alias of `@zanix/utils/validator` — see `cli-dependency-compatibility`) |
 | Comet                  | `'use comet'` directive + `defineComet(Component, import.meta.url)` | —                                                                                                             | space       |
 | Page                   | `@Page()`                                                          | `SpacePageController`                                                                                        | space       |
 | Middleware (guard/pipe/interceptor) | `defineMiddlewareDecorator(kind, fn)`                | —                                                                                                             | server      |
+
+† `ZanixResolver`/`Resolver`/`Query`/`Mutation`/`Request` are exported ONLY
+from `@zanix/server/graphql`, never the root `.` — `handler/graphql.template.ts`
+imports from that subpath, `import type { HandlerContext }` still from the
+root. ‡ `registerCronJob`/`registerJob` are exported from `@zanix/asyncmq/jobs`,
+never the bare `@zanix/asyncmq` root (which additionally bundles the RabbitMQ
+connector/providers/subscribers) — `job/template.ts` imports from that
+subpath. § `registerDLQProcessor` is exported from `@zanix/asyncmq/dlq`, a
+separate subpath from `/jobs` since it's the only way to pull in
+`@zanix/datamaster`'s module graph from this package — `dlqprocessor/
+template.ts` imports from that subpath.
 
 `@zanix/datamaster` does **not** export repository classes — those are app-code
 `ZanixProvider` subclasses, which is why `repository` generates one alongside
@@ -203,18 +214,50 @@ database|cache:<subtype>`), `interactor`, `job` (`--cron`), `dlqprocessor`
 (`--process-type`, `--schedule`, both required), `subscriber` (`--queue`),
 `middleware` (`--kind guard|pipe|interceptor`, required — three equally
 common concerns with no natural default to guess at, same reasoning as
-`dlqprocessor`'s required options).
+`dlqprocessor`'s required options), `globalmiddleware` (`--kind
+guard|pipe|interceptor`, required; writes `shared/middlewares/<name>.<kind>.
+defs.ts` — an auto-discovered, app-wide middleware built on `@zanix/server`'s
+`registerGlobalPipe`/`registerGlobalGuard`/`registerGlobalInterceptor`, never
+applied to a specific handler by hand, structurally distinct from
+`middleware`'s per-handler decorator), `openapi` (`--application`,
+`--include-admin`; `server`/`space-server` only) — see its own carve-out
+below, it doesn't follow this page's shared invariants.
+
+`space`/`space-server` only, no name argument: `graphql-schema` (`[root]`) —
+introspects every locally-declared GraphQL client whose `schemaApplication`
+is `{ external: true }` and caches its real, live schema as SDL text to
+`gql/<name>.schema.graphql`, read back by `zanix space build`/`zanix space
+dev`'s GraphQL check (Layer 2) to validate that client's queries for real.
+Same "derives, doesn't scaffold" and "overwrites on every run" shape as
+`openapi` below — a second real exception to this page's shared invariants,
+not a second reference pattern to copy.
+
+**`openapi` (and `graphql-schema`, below) don't fit the concept→decorator
+table or the shared-invariants list below — both derive, neither scaffolds.**
+Statically introspects the target project's own discovered REST routes (via a
+real `deno run` subprocess, not a template) and writes the result to
+`openapi.json` at the project root — a machine-derived snapshot, not a
+hand-editable shell. It deliberately **overwrites `openapi.json` on every
+run** (`openapi/command.ts`'s own registration doc calls this out
+explicitly) — the opposite of every other generator's "never overwrites an
+existing file" guarantee — and has no `--verify` option, since there's no
+generated *code* to `deno check` against a published dependency. Don't copy
+its shape as the template for a new generator; it's the deliberate exception,
+not a second reference pattern.
 
 `middleware` generates `middlewares/<name>.<kind>.ts`, a shell built directly
 on `defineMiddlewareDecorator` — the one real primitive behind all three
 kinds in `@zanix/server` (`Guard`/`Pipe`/`Interceptor` sugar decorators are
 each a one-line wrapper around it). `middleware` **is** seeded by `zanix new`
-today, for every non-`library` project type (`server`/`space`/`space-server`/
-`app`): `main.ts`'s own `MIDDLEWARES_RECIPE` calls `zanix generate
-middleware`'s own `planMiddleware('example', 'Example', 'pipe'|'interceptor',
-folder)` directly, producing `src/shared/middlewares/example.pipe.ts` and
-`example.interceptor.ts` — a separate ad-hoc recipe in `main.ts`, not a typed
-`ZanixServerSrcTree` leaf. `dlqprocessor`/`subscriber` remain the real
+today, but only for the project types that boot a real REST server
+(`server`/`space-server` — `main.ts`'s own `hasRestMiddlewares =
+isServerFamily || isAll` gate): `main.ts`'s `MIDDLEWARES_RECIPE` calls `zanix
+generate middleware`'s own `planMiddleware('example', 'Example',
+'pipe'|'interceptor', folder)` directly, producing
+`src/shared/middlewares/example.pipe.ts` and `example.interceptor.ts` — a
+separate ad-hoc recipe in `main.ts`, not a typed `ZanixServerSrcTree` leaf. A
+pure `space`/`app` project never seeds this folder, since neither boots a
+REST server of its own. `dlqprocessor`/`subscriber` remain the real
 "generate-only, no `zanix new` seeding" examples: no `@zanix/utils`-published
 tree type declares a folder for either yet. Don't assume every generator in
 this table also has a matching `zanix new` seeding leaf — `cli-scaffold-assembly`
@@ -231,9 +274,11 @@ route-registration time under `renderer: 'preact'`), `not-found` (no name
 argument — a single, whole-app file at the routes root).
 
 Every generator: only runs inside the right project type (erroring out
-otherwise); never overwrites an existing file (safe to re-run); accepts an
-optional trailing `root` argument; supports opt-in `--verify` (see
-`cli-dependency-compatibility`).
+otherwise); never overwrites an existing file (safe to re-run) — **except
+`openapi`/`graphql-schema`, which regenerate their output on every run by
+design**; accepts an optional trailing `root` argument; supports opt-in
+`--verify` (see `cli-dependency-compatibility`) — **except
+`openapi`/`graphql-schema`, which have none**.
 
 ## Checklist before adding or changing a generator
 

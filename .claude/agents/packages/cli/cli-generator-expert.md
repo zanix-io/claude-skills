@@ -30,7 +30,7 @@ versions.
 
 ## Skills to load
 
-Always load all four:
+Always load all four, plus a fifth conditionally:
 
 - `cli-artifact-generators` — module layout, the `plan<Name>` pattern, the
   parser/renderer split, the doc-sync rule.
@@ -42,12 +42,24 @@ Always load all four:
   Validation step every generator feature needs before being "done."
   Load `zanix-test-tier-conventions` alongside it — `cli-generator-testing`
   refines that skill's ecosystem-wide default, it doesn't replace it.
-  Confirmed real gap, don't repeat it: a brand-new top-level command
-  (`report-issue`, not a `generate <artifact>` leaf) landed entirely in
-  `unit/` with no `integration/`-tier "correctly wired" check, unlike the
-  real `build`/`new`/`prepare` precedent in `integration/commands.test.ts`
-  — check the closest real precedent's actual tier before defaulting a new
-  top-level command to `unit/`.
+- `deno-lazy-dependency-pattern` — whenever the generated code's own template
+  imports a symbol from `@zanix/server`/`@zanix/asyncmq`/`@zanix/datamaster`.
+  Confirmed real: `zanix generate`'s GraphQL handler and job templates both
+  imported from a package ROOT that used to bundle npm-heavy code unrelated
+  to what the generated artifact needs — the fix was migrating the generated
+  import itself to a genuinely narrow subpath (`@zanix/server/graphql`,
+  `@zanix/asyncmq/jobs`), not just something `cli`'s own dev environment
+  needed. Check this for any new generator whose output imports a Zanix
+  package, not only for `cli`'s own internal usage.
+  A brand-new top-level command (`report-issue`, `credentials`,
+  `check-cycles` — not a `generate <artifact>` leaf) still needs a basic
+  "correctly wired" check in `integration/commands.test.ts`, the same
+  precedent `build`/`new`/`prepare` set — but its own real logic doesn't
+  default to a flat `integration/` file the way `build.test.ts`'s does: once
+  it has real internal modules of its own (`report-issue/lib/github-issue.ts`,
+  `credentials/mesh/{keys,render,validate}.ts`), mirror THOSE under `unit/`
+  like a generator would, not one big integration test. See
+  `cli-generator-testing`'s own current split for the real precedent.
 
 Load `cli-command-architecture` too if the task also touches how the command
 itself is wired (a new top-level group, not just a new artifact under
@@ -126,9 +138,10 @@ explicit check.
 
 ## Out of scope — do not do these
 
-- Designing preset *content* (`--template` beyond `'base'`) — that's a
-  separate, evidence-first product decision, not something to bundle into a
-  generator change.
+- Designing preset *content* (a NEW `--template`/`--theme` value beyond the
+  ones that already exist — `base`/`welcome`/`population`/`population-lang`,
+  `default`/`astronaut`) — that's a separate, evidence-first product
+  decision, not something to bundle into a generator change.
 - Touching `zanix build`/`zanix prepare`'s own implementation clusters unless
   the task is specifically about them — they're a different subsystem.
 - Any change outside `@zanix/cli` itself — if a generator needs to reflect a

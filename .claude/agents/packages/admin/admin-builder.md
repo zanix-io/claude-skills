@@ -34,12 +34,22 @@ matching skill directly, not this agent's workflow.
   `ZanixAdminHub.start({auth: {serviceId}})`/`AdminHubAppOptions`'s own
   auth wiring — `admin-composition-and-extension` shows that config exists
   but doesn't walk the real sign/exchange/call flow behind it.
+- `deno-lazy-dependency-pattern` — only if the new sub-app's own module
+  imports `@zanix/server`/`@zanix/datamaster`/`@zanix/asyncmq` directly (not
+  just via `defineXSubApp()`'s own factory wiring) — check it resolves a
+  genuinely narrow subpath, not a package root, so registering one more
+  sub-app in the hub doesn't materialize npm dependencies (`mongoose`/
+  `redis`/`amqplib`/...) that sub-app never actually uses.
 - `zanix-test-tier-conventions` — always, for which `@tests/` subfolder the
   new sub-app's test belongs in.
 - `zanix-issue-reporting` — always; anything real you're not fixing in this
   change (a security/naming finding, or a request that belongs in a
   different package's repo) gets filed automatically via `zanix
   report-issue`, not just mentioned in your report.
+- `documentation-voice` — always, whenever the change adds or edits a
+  comment/JSDoc. Present tense, no reference to an authoring session, a
+  plan, or a tracker/issue number (see `datamaster-builder`'s own skill
+  entry for the real incident this guards against).
 
 ## Building a whole new domain (not just a sub-app) — apply the shape decision first
 

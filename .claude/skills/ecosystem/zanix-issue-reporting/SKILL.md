@@ -40,6 +40,35 @@ the chat report instead — a missed report is recoverable (ask again later,
 or a human notices); a spurious issue on a real, public repo isn't free to
 undo.
 
+## A same-repo, simple Bucket-A finding: propose fixing now, don't default to filing
+
+The three-bucket table above defaults Bucket A to filing. That default
+flips — for a builder/reviewer-shaped agent (not a periodic sweep agent,
+see below), not by changing the bucket itself — when both hold:
+
+- **Same repo the current change is already touching** — not a different
+  package, not `claude-skills` for a package-code finding.
+- **Small and self-contained** — a stale doc paragraph, a comment/JSDoc
+  correction adjacent to code just touched — not a design decision, not
+  anything security-relevant (that stays filed unconditionally, per the
+  standing "never silently fix a security footgun as a side effect of
+  unrelated work" gate every package builder agent's own "Out of scope"
+  already carries), and not something that needs its own separate
+  test/review cycle.
+
+When both hold, surface it in the report as something to fix right now
+instead of reaching for `zanix report-issue` — the same
+confirm-before-acting gate the Golden Rule already applies to filing
+governs fixing too. **Confirmed real**: a `datamaster` session fixing one
+bug incidentally surfaced a second, unrelated finding — a doc paragraph in
+that same repo still describing a fallback behavior the code no longer
+had — small enough to fix in the same breath instead of filing a separate
+issue for a one-paragraph correction.
+
+Anything outside this narrow case — a different repo/package, a
+bigger fix, anything security-relevant — still follows the three-bucket
+table unchanged: file it, don't fix it opportunistically.
+
 ## Periodic sweep agents: batch-confirm once per run, not per finding
 
 **Applies to**: `ecosystem-maintenance`, `conventions-sweep`,
@@ -285,7 +314,7 @@ before invoking the command.
 ## Out of scope — do not do these
 
 - Deciding whether a Bucket-A finding should be fixed immediately instead
-  of filed — if it's fixable in the same change, fix it; only file what's
-  genuinely not being fixed now.
+  of filed, beyond the same-repo/simple carve-out above — that remains a
+  situational judgment call, not something this skill prescribes further.
 - Filing on behalf of a Bucket-B finding to be "thorough" — that's the one
   case explicitly not covered, by design.

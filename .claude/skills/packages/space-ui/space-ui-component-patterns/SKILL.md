@@ -188,6 +188,12 @@ defaulting to a render-prop out of habit.
   page directly; caught during testing, not assumed correct on the first
   try. A collapsing/windowing algorithm needs a test for the boundary case
   (a gap of exactly 1), not just the general case.
+- **`Modal`/`Drawer` imported `@zanix/utils/logger` (the full,
+  server-capable entry) directly for one `logger.warn` call, pulling remote
+  `https://jsr.io/...` fetches into every browser bundle** — see
+  `space-ui-architecture`'s "A second cross-package hazard" section for the
+  full mechanism and the fix (`shared/client-logger.ts`). Any new component
+  that needs to log anything follows the same rule, not just these two.
 
 ## Checklist before adding a new component
 
@@ -221,3 +227,11 @@ defaulting to a render-prop out of habit.
       not assumed?
 - [ ] Does a "close and refocus" pattern assume the trigger held real focus
       — checked against whether this component can be hover-only-opened?
+- [ ] Does this component (directly, or by composing another component that
+      does) reach `@zanix/space` or any other real cross-package runtime
+      dependency? See `space-ui-architecture`'s own "Export surface" section
+      for the full rule and why it matters — if yes, its exports belong in
+      `./runtime`/`./runtime/preact`, never the root barrel.
+- [ ] Does this component log anything? See `space-ui-architecture`'s "A
+      second cross-package hazard" section — `shared/client-logger.ts`,
+      never `@zanix/utils/logger` directly.

@@ -56,7 +56,7 @@ at execution time — same encryption guarantee as any other AsyncMQ message
 ## Registering a cron job
 
 ```ts
-import { registerCronJob } from 'jsr:@zanix/asyncmq@latest'
+import { registerCronJob } from 'jsr:@zanix/asyncmq@^0.8.0/jobs'
 
 registerCronJob({
   name: 'minuteJob',

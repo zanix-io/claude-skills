@@ -1,6 +1,6 @@
 ---
 name: utils-logger
-description: The default Logger instance and its six log levels (including logger.high, between warn and error), the six storage configuration styles, redact/setDefaultRedactOptions (on by default, recursive), and real footguns — logger.error's silent dedup-to-nothing (which logger.high does not share), the JSON.stringify(Error)-collapses-to-{} trap, and global-instance clobbering. Use when configuring logging, choosing a storage backend, or reasoning about what gets redacted.
+description: The default Logger instance and its six log levels (including logger.high, between warn and error), the six storage configuration styles, redact/setDefaultRedactOptions (on by default, recursive), createClientLogger (the browser-safe entry, and the registration-based indirection that actually keeps @std/fmt/colors and @std/path out of its module graph), and real footguns — logger.error's silent dedup-to-nothing (which logger.high does not share), the JSON.stringify(Error)-collapses-to-{} trap, and global-instance clobbering. Use when configuring logging, choosing a storage backend, reasoning about what gets redacted, or building a browser-bundled component that needs to log.
 ---
 
 Covers `@zanix/utils/logger`. For the error-serialization mechanics it
@@ -129,6 +129,52 @@ duplicate; **if every extra argument in a call is already a marked
 duplicate, the entire call is silently skipped** — nothing printed or
 saved. Worth knowing before assuming a repeated `logger.error(sameError)`
 call is a no-op bug rather than deliberate dedup.
+
+## `createClientLogger`: the browser-safe entry, and why it's actually safe
+
+```ts
+import { createClientLogger } from 'jsr:@zanix/utils@[version]/logger/client'
+
+const logger = createClientLogger((fmtLog) => fetch('/api/log', { method: 'POST', body: JSON.stringify(fmtLog) }))
+```
+
+`@zanix/utils/logger` (this skill's main subject) is the full, server-capable
+entry — its default storage reaches `Deno.readTextFile`/`Deno.writeTextFile`
+and an optional `WorkerManager` (`utils-workers`), neither of which resolves
+for a browser bundler. `createClientLogger` (`@zanix/utils/logger/client`,
+`modules/logger/main.ts`) is the dedicated browser entry: `storage.save` is
+always the given `fetcher`, so importing it never reaches either.
+
+**The mechanism that makes this actually hold, not just by convention**: the
+shared formatting code (`modules/logger/base.ts`) used to have a static,
+unconditional `import * as colors from '@std/fmt/colors'`, and reached
+`@std/path` transitively through `readConfig` — both real leaks into
+`createClientLogger`'s own module graph, fixed in `4.1.0`. Now `base.ts` (and
+`zanix/namespace.ts`'s `setGlobalZnx`, which every `Logger` — the
+browser-safe one included — calls) hold only a module-private variable plus a
+`register*` function (`registerColorFormatter`/`registerConfigNameReader`/
+`registerConfigReader`/`registerFileSaveFactory`), defaulting to an
+identity/throwing stub. The REAL `@std/fmt/colors`/`readConfig`/
+`WorkerManager`-backed implementations are wired in only as an import-time
+side effect of the real server barrels (`modules/logger/mod.ts`,
+`modules/helpers/mod.ts`) — never by `main.ts`/`createClientLogger`'s own
+entrypoint, which never imports either barrel. A Deno-standard-library
+specifier can only ever resolve to a remote `https://jsr.io/...` URL for a
+browser bundler, never a local file — unresolvable regardless of whether the
+import is actually reached at runtime, which is why the fix is a static
+IMPORT never happening in this file at all, not a runtime guard around one
+that still does.
+
+This is the same registration-based indirection `registerFileSaveFactory`
+(`main.ts`) already used for `WorkerManager` before `4.1.0`, now applied to
+the two leaks that survived that first pass — and the same "keep the
+server-only import out of the client's own module graph" shape
+`@zanix/space`'s `modules/client/client-logger.ts` and `@zanix/space-ui`'s
+`src/shared/client-logger.ts` (Modal/Drawer's shared logger) both build on
+from the CONSUMER side: neither imports `@zanix/utils/logger` directly for a
+browser-bundled component, both import `createClientLogger` instead — this
+mechanism is what makes that substitution actually safe, not just
+convention.
 
 ## Global instance assignment
 

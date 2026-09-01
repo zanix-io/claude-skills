@@ -30,7 +30,7 @@ There is exactly **one** registration function, `registerJob`
 function name:
 
 ```ts
-import { registerJob } from 'jsr:@zanix/asyncmq@latest'
+import { registerJob } from 'jsr:@zanix/asyncmq@^0.8.0/jobs'
 
 // Distributed JOB — durable, extra-process, needs the external worker running.
 registerJob({

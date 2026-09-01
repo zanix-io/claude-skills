@@ -134,9 +134,16 @@ project type → preset → Recipe → assembleScaffold()
   for _any_ project type.
 - `ScaffoldRecipeRegistry<Tree>` (`Record<string, ScaffoldRecipeEntry<Tree>[]>`)
   - `resolveRecipe(registry, preset)` — throws the same kind of `Error`, scoped
-    to one project type's own registry. `SERVER_RECIPES`/`SPACE_RECIPES`/
-    `APP_RECIPES` are the three real registries today, each currently just
-    `{ base: <the recipe> }`.
+    to one project type's own registry. `SERVER_RECIPES`/`APP_RECIPES` are
+    plain top-level `const` objects; `space`'s registry is instead a function,
+    `getSpaceRecipes(theme, renderer)` (`space.ts`) — built fresh per call
+    because `welcome`'s own `routes` leaf needs both threaded through (its
+    copy adapts to `theme === 'astronaut'`, its `@zanix/space-ui` import
+    resolves against `renderer`), unlike `SERVER_RECIPES`, which has nothing
+    on the server side that varies with either. `APP_RECIPES` is still just
+    `{ base: APP_RECIPE_BASE }` — a single root `mod.ts` entry has nothing
+    else to vary on yet. `SERVER_RECIPES` and `getSpaceRecipes(...)` have
+    grown real content beyond `base` — see Presets below.
 - `getServerSrcTree`/`getSpaceSrcTree` key their module-level tree cache on
   `` `${startingPoint}::${preset}` ``, not just `startingPoint` — the same root
   requested with two different presets must never return a stale tree built for
@@ -147,9 +154,22 @@ project type → preset → Recipe → assembleScaffold()
   registry (add one entry) change.
 
 **Designing a preset's actual _content_ is a separate, evidence-first product
-decision from this infrastructure** — `'base'` is currently the only preset with
-real content; don't treat the existence of the registry mechanism as license to
-invent preset content speculatively.
+decision from this infrastructure.** `'base'` is no longer the only preset
+with real content: `space`/`spacecraft` also support `--template welcome`
+(a real welcome landing page, composed from `@zanix/space-ui`'s `Link`) and
+the mutually-exclusive `--template population`/`population-lang` (a real,
+working i18n/population reference — guards, `messagesDir`, real catalogs).
+`SERVER_RECIPES.welcome`/`.population`/`.population-lang` are deliberate
+aliases for `SERVER_RECIPE_BASE` (same array reference) so `spacecraft`'s
+server half — which has no landing-page/i18n concept of its own — still
+resolves for the same `--template` value; they add no server-specific
+content. Visual identity (`--theme default|astronaut`) is a SEPARATE axis
+from `--template`, deliberately never routed through the Recipe/preset
+mechanism at all — see `themes.ts`'s own doc; it never reaches
+`SERVER_RECIPES`/`getSpaceRecipes` and has nothing to do with which preset is
+active. Don't treat the existence of the registry mechanism as license to
+invent preset content speculatively — evidence-first still applies to any
+NEW preset beyond these.
 
 ## `library` is the one exception to the Recipe mechanism, for a narrower reason than the JSR-fetch boundary above
 
@@ -166,19 +186,19 @@ preset validation.
 
 ## Project types (verify against `docs/new.md` before relying on the exact shape)
 
-| Type         | Creates                                                                                                | Notable options                       |
-| ------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `app`        | A `defineZanixApp()` manifest package (`mod.ts`) — no `src/server`/`src/space`/`src/modules` subfolder | —                                     |
-| `space`      | A `@zanix/space` frontend app (`src/space/`)                                                           | `--renderer react\|preact`, `--icons` |
-| `server`     | A backend server (`src/server/`), plus root `mod.ts`/`worker.ts` entrypoints                           | —                                     |
-| `spacecraft` | `space` + `server` combined under the same `src/`                                                      | `--renderer`, `--icons`               |
-| `library`    | A reusable library (`src/modules/`)                                                                    | —                                     |
+| Type         | Creates                                                                                                | Notable options                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `app`        | A `defineZanixApp()` manifest package (`mod.ts`) — no `src/server`/`src/space`/`src/modules` subfolder | —                                                                                              |
+| `space`      | A `@zanix/space` frontend app (`src/space/`)                                                           | `--renderer react\|preact`, `--icons`, `--theme default\|astronaut`, `--pages`, `--template`   |
+| `server`     | A backend server (`src/server/`), plus root `mod.ts`/`worker.ts` entrypoints                           | `--template`                                                                                  |
+| `spacecraft` | `space` + `server` combined under the same `src/`                                                      | Same as `space` — `--theme`/`--icons`/`--pages` never affect the server half                  |
+| `library`    | A reusable library (`src/modules/`)                                                                    | —                                                                                              |
 
-Every type shares `-t/--template`, `--no-prepare` (skip the automatic
-`zanix
-prepare -g -e` step), and `--verify` (see
-`cli-dependency-compatibility`). `zanix new` never overwrites — every generated
-project is a fresh directory.
+Every type shares `-t/--template` (`base` by default; `space`/`spacecraft`
+also accept `welcome`/`population`/`population-lang` — see Presets below),
+`--no-prepare` (skip the automatic `zanix prepare -g -e` step), and
+`--verify` (see `cli-dependency-compatibility`). `zanix new` never
+overwrites — every generated project is a fresh directory.
 
 ## Checklist before adding a new project type or changing a scaffold's shape
 

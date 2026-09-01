@@ -1,6 +1,6 @@
 ---
 name: space-ui-builder
-description: Adds a new component to @zanix/space-ui, following the seven architectural seams, the foundation-primitives extraction discipline, and the composed-markup/render-prop patterns already established across the existing 33 components. Use when asked to add a new presentational or interactive component to this package. Not to be confused with ecosystem-maintenance, which does periodic third-party dependency sweeps, not package extension work.
+description: Adds a new component to @zanix/space-ui, following the seven architectural seams, the foundation-primitives extraction discipline, and the composed-markup/render-prop patterns already established across the existing component catalog (README.md's "Current status" is the live count — don't hardcode one here, it drifts). Use when asked to add a new presentational or interactive component to this package. Not to be confused with ecosystem-maintenance, which does periodic third-party dependency sweeps, not package extension work.
 tools: Read, Write, Edit, Grep, Glob, Bash
 ---
 
@@ -9,8 +9,9 @@ explicit, well-documented repeatable build workflow found anywhere in this
 ecosystem's own skills — a dependency-ordered build plan, real bugs already
 found and fixed at each step, and a closed set of architectural constraints
 every component must satisfy. Follow that discipline; don't improvise a
-shape that isn't already established somewhere in the existing 33
-components unless a real gap justifies it.
+shape that isn't already established somewhere in the existing component
+catalog (README.md's "Current status" section is the live count) unless a
+real gap justifies it.
 
 ## Golden rule (token savings)
 
@@ -62,6 +63,14 @@ components unless a real gap justifies it.
   RichText-tag candidate or the task touches RichText directly; the
   candidate question itself (see "Definition of done" below) is a quick,
   always-required judgment call that doesn't need the full skill loaded.
+- `deno-lazy-dependency-pattern` — always for a new component whose own
+  module imports anything from `@zanix/space` (not just `@zanix/space-ui`
+  internals) — confirmed real: `Video`/`Image`/`RichText`/`ImgButton`/
+  `Card`/`Menu` bundled into this package's own root barrel alongside
+  everything else created a genuine circular resolution with `@zanix/space`'s
+  own build pipeline (fixed by moving them to `@zanix/space-ui/runtime`).
+  Check whether a new component needs the same subpath treatment BEFORE
+  adding it to the root barrel, not after a consumer's build breaks.
 - `feature-completeness-conventions` — always; its Tests/JSDoc gates apply
   as written, and its Docs gate is what "Docs move in the same change"
   below makes concrete for this package.
@@ -69,6 +78,10 @@ components unless a real gap justifies it.
   new component's test belongs in — this repo's own suite only has
   `unit`/`functional` (no `integration/` directory), confirm that's still
   the case rather than assuming.
+- `documentation-voice` — always, whenever the change adds or edits a
+  comment/JSDoc. Present tense, no reference to an authoring session, a
+  plan, or a tracker/issue number (see `datamaster-builder`'s own skill
+  entry for the real incident this guards against).
 
 ## Before writing any code
 
@@ -93,6 +106,14 @@ components unless a real gap justifies it.
    `Combobox`'s confirmed `onChange`/`onInput` divergence is the concrete
    example of when this last case actually applies, not just "any hook is
    involved somewhere").
+4. **Decide the export surface**: does this component's own module import
+   `@zanix/space` (or any other real cross-package runtime dependency)
+   directly, or compose another component that does (transitively, at any
+   depth — not just one level)? See `space-ui-architecture`'s "Export
+   surface" section for the full rule and why it's a real architectural
+   constraint, not a preference. If yes, add its exports to
+   `src/runtime.ts`/`src/runtime-preact.ts`, never `mod.ts`/`mod-preact.ts`
+   — otherwise it stays in the root barrel with the rest.
 
 ## Building it
 

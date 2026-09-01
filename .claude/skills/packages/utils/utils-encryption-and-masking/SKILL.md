@@ -44,7 +44,7 @@ intended routes through AES instead, with no error pointing at the
 mismatch — pass `type` explicitly whenever the key's shape isn't
 guaranteed at the call site.
 
-## Asymmetric: RSA-OAEP (encryption) / RSA-PSS (signing)
+## Asymmetric: RSA-OAEP (encryption) / RSASSA-PKCS1-v1_5 (signing)
 
 ```ts
 const { privateKey, publicKey } = await generateRSAKeys() // 2048-bit, SHA-256 by default
@@ -56,8 +56,20 @@ const valid = await verifyRSA(message, signature, publicKey)
 ```
 
 `generateRSAKeys(options?)` — `hash` (excludes `'SHA-1'`) default
-`'SHA-256'`; `modulusLength` default `2048`; `algorithm` default
-`'RSA-OAEP'` (or `'RSA-PSS'` for signing keys).
+`'SHA-256'`; `modulusLength` default `2048`; `algorithm`
+(`'RSA-OAEP' | 'RSA-PSS' | 'RSASSA-PKCS1-v1_5'`) default `'RSA-OAEP'`, and
+only selects the generated keypair's WebCrypto `keyUsages`
+(`'RSA-OAEP'` → encrypt/decrypt, anything else → sign/verify) — it has no
+effect on what `signRSA`/`verifyRSA` actually do below.
+
+**`signRSA`/`verifyRSA` always sign and verify with `RSASSA-PKCS1-v1_5`**,
+regardless of which `algorithm` generated the keypair — this is what
+"RS256"/"RS384"/"RS512" actually mean per RFC 7518 §3.3, distinct from
+RSA-PSS (RFC 7518 §3.5, "PS256"/etc). A signature from `signRSA` verifies
+under any spec-compliant external RS256 verifier (PyJWT, `jose`,
+`jsonwebtoken`, `openssl`), not just this package's own `verifyRSA` — this
+backs `@zanix/auth`'s JWT `RS256` signing (`createJWT`/
+`createServiceAssertion`).
 
 **HMAC — two functions, different default hash, easy to conflate**:
 `signHMAC(data, secret, hash?)` is string-based, `hash` excludes `'SHA-1'`

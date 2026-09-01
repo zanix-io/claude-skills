@@ -57,6 +57,17 @@ either, both, or neither:
   following `@zanix/space`'s own primitive/semantic convention exactly. The
   one file that varies by visual identity — a different theme preset would
   ship a different `tokens.css`, same shape.
+- **`theme/space-defaults.css`** — the one file, of the four, that styles
+  `@zanix/space`'s OWN markup contract (`data-space`, never this package's
+  own `data-space-ui`): its built-in `not-found`/`error` fallback views, and
+  every `@zanix/cli`-scaffolded template's root element, all sharing ONE
+  generic `[data-space="content"]` hook (never a per-`--template` value) so a
+  future scaffolded template inherits it with zero changes here. References
+  only semantic tokens from `theme/tokens.css`, same discipline as
+  `shared/behavior.css`. **This is the canonical source** — `@zanix/cli`'s
+  own `space-theme.ts` ships an embedded, byte-for-byte-synced copy (see
+  `docs/styling.md` for the integrity test), rather than fetching it from
+  JSR at scaffold time.
 - **`shared/behavior.css`** — "what does this generic interaction pattern
   need," regardless of theme. Structural/animation CSS, deliberately
   theme-agnostic (only references semantic token *names*, never a literal),

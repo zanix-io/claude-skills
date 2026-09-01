@@ -21,7 +21,7 @@ before assuming this summary is still accurate.
 ## `interpolate`: real data into a template
 
 ```ts
-import { interpolate } from 'jsr:@zanix/utils@[version]'
+import { interpolate } from 'jsr:@zanix/utils@[version]/helpers'
 
 interpolate('Bearer {{token}}', { token: 'abc123' }) // 'Bearer abc123'
 ```
@@ -42,7 +42,7 @@ string is *exactly* one placeholder (vs. embedded in surrounding text).
 ## `interpolateEnv`: the real, ecosystem-wide missing-var footgun
 
 ```ts
-import { interpolateEnv } from 'jsr:@zanix/utils@[version]'
+import { interpolateEnv } from 'jsr:@zanix/utils@[version]/helpers'
 
 interpolateEnv('Bearer ${{API_KEY}}') // resolves against Deno.env
 ```
@@ -108,7 +108,7 @@ array.
 ## `sanitizeUrl`: the navigable-`href`/`src` XSS guard
 
 ```ts
-import { sanitizeUrl } from 'jsr:@zanix/utils@[version]'
+import { sanitizeUrl } from 'jsr:@zanix/utils@[version]/helpers'
 
 sanitizeUrl('javascript:alert(1)') // ''
 sanitizeUrl('data:image/png;base64,...') // unchanged (image data: is safe)

@@ -271,15 +271,36 @@ uses (e.g. `@zanix/datamaster`'s `registerModel(...)`), including per-repository
 seeders (`seeders/main.ts` + environment-specific
 `seeders.dev.ts`/`seeders.prod.ts`).
 
+### External-service connectors: `RestClient`/`GraphQLClient`, never raw `fetch`
+
+The generic (non-database) sibling of the pattern above: a `Connector`
+extending `@zanix/server`'s own `RestClient` (REST) or `GraphQLClient`
+(GraphQL, itself `extends RestClient`) — `zanix generate connector <name>`
+scaffolds this exact shape. Reaching for a bare `fetch()` call inside a
+handler/interactor/provider to talk to an external HTTP/GraphQL API is a
+real, confirmed anti-pattern: it silently drops what the base class already
+gives for free (default headers, conditional `ETag` caching, structured
+`RestClientError`s, `GraphQLClient`'s spec-standard `introspect()`), and
+scatters what should be one reusable connector instance across every call
+site that needs it. A `Connector` is registered like any other
+provider/repository and reached the same way (`this.providers.get(X)` or a
+named getter for a core slot) — there's no reason for outbound HTTP/GraphQL
+logic to look structurally different from the database-repository pattern
+above.
+
 ## Jobs / queues
 
-Cron and queue job registration comes from `@zanix/asyncmq`, not `@zanix/server`
-(the `BackoffOptions`/`ScheduleOptions`/etc. types `@zanix/server` exports are
-just shared typings that package consumes — `@zanix/server` has no
-job-registration API of its own):
+Cron and queue job registration comes from `@zanix/asyncmq/jobs`, not
+`@zanix/server` (the `BackoffOptions`/`ScheduleOptions`/etc. types
+`@zanix/server` exports are just shared typings that package consumes —
+`@zanix/server` has no job-registration API of its own). `registerJob`/
+`registerCronJob` live on the `/jobs` subpath, not the bare `@zanix/asyncmq`
+entry point — that root import additionally bundles the RabbitMQ connector/
+providers/subscribers, which a project that only wants to declare jobs
+doesn't need to pull in:
 
 ```ts
-import { registerCronJob } from "@zanix/asyncmq";
+import { registerCronJob } from "@zanix/asyncmq/jobs";
 
 registerCronJob({
   isActive: true,
@@ -317,6 +338,10 @@ When reviewing a PR (or writing new code) in a Zanix backend service, check for:
       ability to be reached from elsewhere)?
 - [ ] Are RTOs (`Body`/`Params`/`Search`) used for request validation, rather
       than manual validation inside the handler body?
+- [ ] Does a handler/interactor/provider call a raw `fetch()` against an
+      external HTTP/GraphQL API instead of a `Connector` extending
+      `RestClient`/`GraphQLClient` (`zanix generate connector`)? See
+      "External-service connectors" above.
 - [ ] For new/changed handlers, interactors, providers, or jobs: does the change
       pass the `feature-completeness-conventions` gate (tests covering the
       new/changed behavior, docs/JSDoc updated if stale, no lingering assertion

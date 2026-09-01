@@ -37,6 +37,10 @@ source for the ecosystem-wide default, don't re-derive it here.
   found while verifying tests (not the change you were asked to validate)
   is a Bucket-A finding; file it (`--repo <the repo it's in>`) in addition
   to reporting it here.
+- `documentation-voice` — always, for any new/changed test description or
+  comment. Present tense, no reference to an authoring session, a plan, or
+  a tracker/issue number (see `datamaster-builder`'s own skill entry for
+  the real incident this guards against).
 
 ## What "done" means
 

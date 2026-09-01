@@ -10,6 +10,17 @@ different concern (security posture, not content selection). File:line
 references point at `~/Documents/Development/ZanixLibraries/space` — read
 the real code there before assuming this summary is still accurate.
 
+Starting a NEW consumer project that needs this from day one: `zanix new
+space|spacecraft --template population` (`populationGuard()` only, one
+implicit locale, no `/[lang]/` prefix) or `--template population-lang`
+(adds `langPreHandler`/`langGuard` and real `/[lang]/...` routing on top —
+the full reference shape) scaffolds a working `src/space/middleware.ts` +
+`messagesDir` wiring for exactly the mechanisms below, instead of hand-
+wiring them from scratch. `--icons`/`--theme`/`--pages`/`--renderer` all
+compose freely with either template value — see `cli-scaffold-assembly` for
+the full preset/axis reference. An EXISTING project adding one of these
+mechanisms for the first time still follows this skill directly.
+
 ## Golden rule (token savings)
 
 - These three mechanisms compose in one direction — language and population
@@ -22,13 +33,31 @@ the real code there before assuming this summary is still accurate.
 ## Language routing: `langPreHandler` + `langGuard`
 
 ```ts
-import { bootstrapServers } from '@zanix/server'
-import { langPreHandler } from '@zanix/space'
+// space.app.ts (or any module it imports — NOT mod.ts alone, see below)
+import { definePreHandler, langPreHandler } from '@zanix/space'
 
-await bootstrapServers({
-  ssr: { preHandler: langPreHandler({ availableLangs: ['en', 'es'], defaultLang: 'en' }) },
+definePreHandler(langPreHandler({ availableLangs: ['en', 'es'], defaultLang: 'en' }))
+```
+
+```ts
+// mod.ts
+import { getUserPreHandler } from '@zanix/space'
+import { bootstrapRemoteApp } from '@zanix/app/runtime' // or bootstrapServers directly
+
+await bootstrapRemoteApp(spaceApp, {
+  server: { ssr: { preHandler: getUserPreHandler() } },
 })
 ```
+
+**Register via `definePreHandler`, not a literal `preHandler:` passed only to `mod.ts`'s own
+bootstrap call.** `zanix space dev` never imports `mod.ts` at all — only `space.app.ts` — and boots
+its own SSR server with a hardcoded, dev-only `preHandler` (Vite hot-client/asset handling),
+composing a registered `getUserPreHandler()` result AFTER that. A `preHandler` declared only in
+`mod.ts` is invisible under `dev`: `GET /` (an unprefixed URL) 404s instead of redirecting, while
+working fine in production — this exact gap was confirmed and fixed (`@zanix/space`
+`definePreHandler`/`getUserPreHandler`, `@zanix/cli`'s `dev/action.ts` composition) as of
+2026-08-28. Same timing rule `defineMiddleware`'s guards already have: call it from something
+`space.app.ts` imports (directly or transitively), never `mod.ts`-only.
 
 ```tsx
 import { defineMiddleware, langGuard } from '@zanix/space'
@@ -62,6 +91,14 @@ mechanism behind it).
 setting the same header (`Set-Cookie`) on one route silently clobber each
 other instead of merging, breaking `populationGuard`+`langGuard`
 coexistence on the same route.
+
+**Cookie consent**: neither `X-Znx-Lang` nor `X-Znx-Population` (below) can
+be gated behind a consent choice — no built-in option to skip the
+`Set-Cookie`. Suggested classification for a consuming app's own
+cookie-banner: "strictly necessary/functional" (the URL/query/route param
+can also carry the value on every request; losing the cookie only loses
+persistence across visits, never breaks the app) — see `docs/middleware.md`'s
+own "Cookie consent" section in `@zanix/space` for the full reasoning.
 
 ## Population resolution: `populationGuard`
 
@@ -109,22 +146,38 @@ messages/
 
 ```tsx
 import { loadMessages } from '@zanix/space'
+import { IntlProvider, useIntl } from '@zanix/space-ui'
 
 loader = async (ctx: { params: { lang: string }; population?: string }) => ({
+  lang: ctx.params.lang,
   messages: await loadMessages({ lang: ctx.params.lang, population: ctx.population }),
 })
-component = ({ messages }) => <h1>{messages['home/title']}</h1>
+// NEVER interpolate `messages[key]` directly as a JSX child — see `Messages`'s own note below for
+// why (a compiled catalog value is precompiled AST, not a string). Always format through
+// `IntlProvider`/`useIntl`, which accepts either shape and always returns a plain string.
+component = ({ lang, messages }) => (
+  <IntlProvider locale={lang} messages={messages}>
+    <Home />
+  </IntlProvider>
+)
+function Home() {
+  const { formatMessage } = useIntl()
+  return <h1>{formatMessage('home/title')}</h1>
+}
 ```
 
 `messagesDir` accepts an array — same first-match-wins host-composition
 convention as `routesDir`/`assetsDir`, resolved independently per base/
-override file. `loadMessages({lang, population?})` returns `Messages` — an
-opaque, flat `Record<string,string>`, never inspected/interpreted by this
-function itself. Base + override are shallow-merged (`{...base,
-...override}`), cached for the process lifetime keyed by `` `${lang}:${population
-?? ''}` ``; concurrent calls for the same uncached key share one in-flight
-resolution. **Cache is bypassed entirely under `znx space dev`** — live-edit,
-no restart, same as `assetsDir`'s dev behavior.
+override file. `loadMessages({lang, population?})` returns `Messages` — a
+flat `Record<string, string | CompiledMessageNode[]>`, never inspected/
+interpreted by this function itself (`CompiledMessageNode` mirrors
+`@formatjs/icu-messageformat-parser`'s own AST node shape, redeclared
+locally — `@zanix/space` never actually depends on FormatJS). Base +
+override are shallow-merged (`{...base, ...override}`), cached for the
+process lifetime keyed by `` `${lang}:${population ?? ''}` ``; concurrent
+calls for the same uncached key share one in-flight resolution. **Cache is
+bypassed entirely under `znx space dev`** — live-edit, no restart, same as
+`assetsDir`'s dev behavior.
 
 **Real correctness constraint, not just a style rule**: catalogs must be
 flat, never nested — a nested shape would silently lose sibling keys on any
@@ -136,19 +189,27 @@ JSON, or not a flat object) logs an error and is skipped — base and override
 are validated independently, so a broken override degrades to base-only
 rather than failing the whole render.
 
-`Messages` returns plain strings only, with no `react-intl`/formatting-library
-coupling in this path. Cross-references:
+No `react-intl`/formatting-library coupling in this resolution path itself — it
+returns whatever is on disk (raw ICU string or precompiled AST) unformatted.
+Cross-references:
 
 - `@zanix/cli`'s `zanix space build` compiles `messagesDir`'s ICU strings
-  into AST in place before formatting runs — catalogs may freely mix
-  compiled/uncompiled values across keys.
+  into AST, writing the result to `{clientBuildDir}/messages/{rootIndex}/...`
+  — NEVER back into `messagesDir` itself (that used to happen, silently
+  corrupting a developer's own hand-authored ICU source on an ordinary local
+  build; fixed as of 2026-08-28, same "compiled output lives in its own
+  directory" contract `clientBuildDir` already has for the client bundle).
+  Catalogs may freely mix compiled/uncompiled values across keys.
+- `loadMessages()` reads from `{clientBuildDir}/messages/...` in production
+  once `clientBuildDir` is configured (`getMessagesBuildDir()`) — `messagesDir`
+  itself is only ever read live under `znx space dev`, which never runs the
+  compiler at all: the dev-mode cache bypass plus `space-ui`'s formatter
+  accepting either raw ICU or precompiled AST means nothing needs compiling
+  in dev.
 - `@zanix/space-ui`'s `IntlProvider`/`useIntl`/`createFormatter` (React and
   Preact bindings, each independent — never `preact/compat`) wraps
   `@formatjs/intl`'s `createIntl()`, the only FormatJS dependency in the
   stack.
-- `znx space dev` never runs the compiler — the dev-mode cache bypass plus
-  `space-ui`'s formatter accepting either raw ICU or precompiled AST means
-  nothing needs compiling in dev.
 
 ## Checklist before adding a language, population, or message key
 
@@ -161,3 +222,12 @@ coupling in this path. Cross-references:
       could silently lose sibling keys on merge?
 - [ ] Does a shared HTTP cache in front of this app vary on the population
       cookie, if one exists?
+- [ ] Is `preHandler` (e.g. `langPreHandler`) registered via `definePreHandler`
+      from something `space.app.ts` imports — never only as a literal passed
+      to `mod.ts`'s own bootstrap call, which `zanix space dev` can't see?
+- [ ] Does every place a message renders go through `IntlProvider`/`useIntl`
+      — never `messages[key]` interpolated directly (crashes once
+      `zanix space build` compiles the catalog to AST)?
+- [ ] Is `clientBuildDir` declared if this app wants `loadMessages()` to read
+      compiled catalogs in production — without it, production falls back
+      to reading `messagesDir` live (uncompiled ICU strings, never AST)?

@@ -55,7 +55,11 @@ step-by-step procedure and its own easy-to-pick-wrong-guide failure mode.
   adapter" section. This is a real, repeatable workflow, distinct from — and
   never to be confused with — the out-of-scope "new delivery channel" case
   below: a new vendor inside `sms`/`whatsapp` is in scope, a 4th channel
-  entirely is not.
+  entirely is not. **If the new vendor's own SDK is a real npm package** →
+  `deno-lazy-dependency-pattern` — a consumer that never configures this
+  specific vendor shouldn't pay for its npm dependency; check whether it
+  needs the same conditional-dependency treatment `@zanix/asyncmq`/
+  `@zanix/app` already needed for their own optional integrations.
 - **Registering a new trigger action job** (mirroring `mail`'s own
   precedent, `providers/trigger-mail.core.ts`) → `notifications-provider`'s
   own "Registering a new trigger action job" section. Only self-register a
@@ -92,6 +96,10 @@ step-by-step procedure and its own easy-to-pick-wrong-guide failure mode.
   this change (a security-relevant caution noticed as a side effect, or any
   other Bucket-A/C finding — see "Out of scope" below) gets filed
   automatically via `zanix report-issue`, not just mentioned in your report.
+- **Always**, whenever the change adds or edits a comment/JSDoc →
+  `documentation-voice` — present tense, no reference to an authoring
+  session, a plan, or a tracker/issue number (see `datamaster-builder`'s
+  own skill entry for the real incident this guards against).
 
 ## The template-adding workflow, concretely
 

@@ -106,6 +106,54 @@ the check. Omitting `cache` entirely disables rotation altogether — a
 deliberate trade-off for callers without blocklist infra, not a silent gap,
 but it means a captured refresh token stays valid until its own `exp`.
 
+## Guard-stage rotation recovery
+
+`@zanix/server`'s guard pipeline skips its registered response interceptors
+whenever a GUARD throws (unlike a handler-body throw, whose own recovery
+path still runs interceptors) — so a guard that calls `refreshSessionTokens`
+and then a later check (a permission check, most commonly) throws never gets
+`sessionHeadersInterceptor`'s chance to deliver the replacement cookie. The
+client is left holding a cookie the rotation already blocklisted, with the
+replacement computed but never sent.
+
+`attachRotatedSessionToError(error, ctx)` / `recoverRotatedSessionCookie()`
+close that gap, for exactly this guard shape — rotation followed by a later
+check in the same guard, e.g. `refreshSessionTokens` + `permissionsPipe`:
+
+```ts
+import { attachRotatedSessionToError, refreshSessionTokens } from '@zanix/auth'
+
+export function requireSession(roles: string[]): MiddlewareGuard {
+  return async (ctx) => {
+    await refreshSessionTokens(ctx, undefined, { cache })
+    try {
+      await requirePermissions(ctx)
+    } catch (error) {
+      throw attachRotatedSessionToError(error, ctx)
+    }
+    return {}
+  }
+}
+```
+
+`attachRotatedSessionToError` marks `error` with a non-enumerable own
+property (invisible to `serializeError`/`console.error`/`JSON.stringify`,
+same discretion `@zanix/server`'s own `attachRequestToError` applies) and
+returns it unchanged — a no-op when `ctx.locals.session` carries no `token`
+(nothing to recover). Wire `recoverRotatedSessionCookie()` as
+`server.ssr.onError`, typically composed with other error handlers via
+`@zanix/space`'s `globalErrorHandler()` (see `space-routing-and-rendering`):
+it declines (`undefined`) for any error the attach call never touched, and
+rebuilds the response via this package's own `getSessionHeaders`/
+`addHeadersToResponse` — the same functions `sessionHeadersInterceptor`
+itself uses — so the recovered cookie's attributes stay identical to every
+other path that sets one.
+
+Only relevant to a guard that rotates a session and can still throw
+afterward in the same chain — a guard that only ever rotates and returns has
+nothing to recover, since `sessionHeadersInterceptor` delivers the cookie
+normally on any successful response.
+
 ## Block list
 
 ```
@@ -143,3 +191,9 @@ silently invisible to every guard reading `ctx.cookies`.
 - [ ] Is `accessToken` vs. `token` used correctly — never assuming a
       request that only validated a JWT also carries a refresh `token`?
 - [ ] Does any new cookie this package sets keep the `X-Znx-` prefix?
+- [ ] Does a guard rotate a session AND throw afterward in the same chain
+      (e.g. rotation followed by a permission check)? If so, is the
+      downstream throw wrapped in `attachRotatedSessionToError`, with
+      `recoverRotatedSessionCookie()` wired into the consumer's own
+      `onError` chain — not just assumed to work because a successful
+      response would have delivered the cookie fine?

@@ -20,11 +20,14 @@ assuming this summary is still accurate; it will drift as the CLI evolves.
 
 ## Command groups: always `Commander.mountGroup`, never raw `.command()`
 
-Every command group with its own leaf commands (`new`, `generate`, `build`,
-`prepare`, `space`) is built the same way: a bare `new Commander()`
-pseudo-parent (`cwd`) collects that family's leaves, then gets mounted onto its
-own parent via **`Commander.mountGroup(name, cwd)`** — never the raw
-`Command.command(name, cwd)`.
+Every one of the 8 top-level commands (`new`, `generate`, `build`, `prepare`,
+`space`, `report-issue`, `check-cycles`, `credentials`) is built the same way:
+a bare `new Commander()` pseudo-parent (`cwd`) is mounted onto `cli` via
+**`Commander.mountGroup(name, cwd)`** — never the raw `Command.command(name,
+cwd)`. Most (`new`, `generate`, `prepare`, `space`, `credentials`) then
+register real sub-leaves on `cwd` (`space dev`/`space build`, `credentials
+mesh`, ...); `build`/`report-issue`/`check-cycles` have no sub-leaves at all —
+`cwd` itself carries the one `.action()`, same mount call either way.
 
 This isn't dead code, even though it's currently redundant. As of
 `@cliffy/command@1.2.1` (the version this repo pins), `getErrorHandler()`
@@ -73,16 +76,22 @@ shared generic helper tries to thread `.option()` through a loop. cliffy's
 shared helper applying it generically breaks that inference (a real,
 discovered-the-hard-way constraint, not a style preference). A command with no
 options can still use a thin registration helper; a command needing options
-(`rto`'s `--field`, `job`'s `--cron`) registers its full chain directly. See
-`cli-artifact-generators` for the full module-layout convention this pattern
-lives inside for generators specifically.
+(`rto`'s `--field`, `job`'s `--cron`, `credentials password-hash`'s
+`--level`/`--var-name`) registers its full chain directly. Not
+generator-specific — `credentials password-hash` is a plain top-level leaf,
+not a `generate` artifact, and follows the identical pattern, confirming
+this rule is about cliffy's own `.option()` inference, not anything
+particular to a generator's own module shape. See `cli-artifact-generators`
+for the full module-layout convention this pattern additionally lives
+inside for generators specifically.
 
 ## Checklist before adding a new command group or leaf
 
-- [ ] Is this a new top-level group with its own leaves (like `new`, `generate`,
-      `build`, `prepare`, `space`)? It must be mounted via `Commander.mountGroup`,
-      never `Command.command`, or its leaves' errors silently lose the polished
-      CLI error UX.
+- [ ] Is this a new top-level command (like `new`, `generate`, `build`,
+      `prepare`, `space`, `report-issue`, `check-cycles`, `credentials`)? It
+      must be mounted via `Commander.mountGroup`, never `Command.command`, or
+      its errors (or its leaves' errors, if it has any) silently lose the
+      polished CLI error UX.
 - [ ] Does this leaf (or anything it calls) need `this.runCommand(...)` to reach
       another command tree? It must be built as a real `Commander` instance via
       `baseArgumentActionCommand`, not cliffy's bare `Command`.

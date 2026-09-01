@@ -63,6 +63,12 @@ work, not one of these look-alikes**:
   propagates furthest.
 - `zanix-local-api-vs-aggregator` — whenever the task involves a new kind of
   HTTP controller/ownership boundary, not just a transport mechanism.
+- `deno-lazy-dependency-pattern` — whenever a new transport/protocol type or
+  core provider/connector slot brings in its own real npm client library
+  (a new WebSocket/gRPC library, a new wire-protocol SDK) — a consumer that
+  never activates this transport shouldn't pay for its dependency, and this
+  package sitting at the base of the dependency graph means an unsafe
+  precedent here propagates to every package that depends on `@zanix/server`.
 - `feature-completeness-conventions` — its Phase 4 checklist in full
   applies to every new exported symbol here, same as any other package —
   not just Tests/Docs/JSDoc, see that skill's own note on why a narrowed
@@ -96,6 +102,12 @@ work, not one of these look-alikes**:
   example, a precedent that's drifted) is worth filing immediately
   (`--repo server`, Bucket A) rather than leaving it for the next session
   to rediscover.
+- `documentation-voice` — always, whenever the change adds or edits a
+  comment/JSDoc. Present tense, no reference to an authoring session, a
+  plan, or a tracker/issue number (see `datamaster-builder`'s own skill
+  entry for the real incident this guards against) — given how many other
+  packages copy this one's own connector/provider registration shape,
+  an unclean precedent here propagates furthest.
 
 ## Workflow
 

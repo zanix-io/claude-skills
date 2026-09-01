@@ -11,9 +11,13 @@ version of whatever it imports. File:line references point at
 `~/Documents/Development/ZanixLibraries/cli` — read the real code there before
 assuming this summary is still accurate.
 
-Packages a generated project can end up depending on: `@zanix/server`,
+Packages a generated project can end up depending on: `@zanix/server`
+(and its `/graphql` subpath, `--type graphql` handlers only),
 `@zanix/validator`/`@zanix/types` (aliases, see below), `@zanix/datamaster`,
-`@zanix/asyncmq`, `@zanix/core`, `@zanix/app`, `@zanix/space`.
+`@zanix/asyncmq` (and its `/jobs` subpath), `@zanix/core`, `@zanix/app` (and
+its `/runtime` subpath), `@zanix/space`, `@zanix/space-ui` (`--icons`/
+`--theme astronaut` only), `@zanix/utils/logger`/`@zanix/utils/linter`
+(subpath aliases, same treatment as `@zanix/validator`/`@zanix/types`).
 
 ## Golden rule (token savings)
 
@@ -47,16 +51,20 @@ something looks version-related.
   real generator/template output, not assumed: `library` → none; `app` →
   `@zanix/app`/`@zanix/utils/logger`; `space` →
   `@zanix/space`/`@zanix/app/runtime`; `server` →
-  `@zanix/server`/`@zanix/datamaster`/`@zanix/asyncmq`/`@zanix/validator`/`@zanix/core`;
-  `space-server` → `@zanix/space`/`@zanix/server`/`@zanix/datamaster`/
-  `@zanix/asyncmq`/`@zanix/validator`/`@zanix/core` — **not** the union of
+  `@zanix/server`/`@zanix/datamaster`/`@zanix/asyncmq`/`@zanix/asyncmq/jobs`/
+  `@zanix/validator`/`@zanix/core`; `space-server` →
+  `@zanix/space`/`@zanix/server`/`@zanix/datamaster`/`@zanix/asyncmq`/
+  `@zanix/asyncmq/jobs`/`@zanix/validator`/`@zanix/core` — **not** the union of
   `space`'s and `server`'s own arrays: it excludes `@zanix/app/runtime`,
   because `space-server`'s root `mod.ts` calls `Zanix.start()` directly
   instead of going through `bootstrapRemoteApp`. `server`/`space-server`
   need `@zanix/core` because their scaffold includes a real, runnable root
   `mod.ts` that calls `Zanix.start()` — not because any example artifact file
-  imports it directly. `baseZnxConfig` writes exactly this list into a freshly
-  generated `deno.json` — no more, no less, no implicit versions.
+  imports it directly. `@zanix/asyncmq/jobs` is separate from the bare
+  `@zanix/asyncmq` entry because `server`'s/`space-server`'s own tree seeds an
+  `example-job.defs.ts` (`planJob`) that imports `registerCronJob` from that
+  subpath specifically. `baseZnxConfig` writes exactly this list into a
+  freshly generated `deno.json` — no more, no less, no implicit versions.
 - `ensureZanixDependency(root, pkg)` — the `zanix generate` counterpart, for
   adding one artifact to an already-scaffolded project. Same never-clobber
   guarantee as `ensureConstant`: adds `pkg`'s import only if `deno.json`
@@ -81,14 +89,26 @@ write an import specifier that doesn't resolve.
 1. Runs `zanix new` for every project type (`library`/`app`/`space`/`server`/
    `spacecraft`) into a temp dir, plus a curated `zanix generate` variant
    matrix against a fresh `server` project (every `handler --type`, `connector
-   --slot` shape, `job` with/without `--cron`, a multi-type `rto --field`
-   spread, `dlqprocessor`, etc.) and a fresh `space` project
-   (`comet`/`page`/`layout`). `--type`'s variant list is imported directly from
-   `handler/command.ts`'s own `HANDLER_TYPES` (a real closed enum) rather than
-   hand-duplicated, so that axis can't drift from the generator it watches;
-   `--slot`/`--field` accept open-ended strings with no closed set to derive
-   from, so those variants are curated by hand to hit every distinct code
-   path instead.
+   --slot` shape, `job` with/without `--cron`, every `middleware --kind`, a
+   multi-type `rto --field` spread, `dlqprocessor`, etc.) and a fresh
+   `space --icons` project (`comet`/`component`/`page`/`layout`/`interactor`).
+   `--icons` matters here beyond just being one more flag: `@zanix/space-ui`
+   is a real `ZANIX_DEPENDENCY_VERSIONS` entry consumed ONLY via the
+   `--icons` scaffold path (`ensureSpaceUiDependency`,
+   `commands/new/lib/tree/projects/space-icons.ts`) — a plain
+   `zanix new space` with no flags never declares or imports it, so this is
+   the only place Drift Watch ever exercises that package's real published
+   API at all. `--type`/`--kind`'s variant lists are imported directly from
+   `handler/command.ts`'s own `HANDLER_TYPES` and `middleware/command.ts`'s
+   own `MIDDLEWARE_TYPES` (real closed enums) rather than hand-duplicated, so
+   those axes can't drift from the generators they watch; `--slot`/`--field`
+   accept open-ended strings with no closed set to derive from, so those
+   variants are curated by hand to hit every distinct code path instead.
+   **The lesson, generalized**: a new `@zanix/*` dependency that's reachable
+   only through an opt-in flag (not a project type's base scaffold) needs its
+   own explicit Drift Watch variant — it's invisible to every other variant
+   in the matrix otherwise, confirmed real (this is exactly the gap
+   `@zanix/space-ui`/`--icons` had until fixed).
 2. Rewrites each generated project's `deno.json` to the **real latest
    published JSR version** of every package in `ZANIX_DEPENDENCY_VERSIONS` —
    resolved live via `https://jsr.io/<pkg>/meta.json` — instead of `cli`'s own

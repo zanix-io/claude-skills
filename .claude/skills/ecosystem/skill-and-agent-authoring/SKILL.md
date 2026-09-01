@@ -45,7 +45,22 @@ something kept in sync as the system evolved.
   not portable outside this specific ecosystem. `zanix-envvar-conventions`
   and `zanix-observability-conventions` are here because they document real
   precedents specific to how Zanix packages resolve config and log/throw,
-  not a generic convention borrowed from elsewhere.
+  not a generic convention borrowed from elsewhere. **Also the home for an
+  operational runbook that validates a cross-package scenario end to
+  end, regardless of which audience runs it** (e.g.
+  `zanix-remote-api-app-e2e-validation` standing up a real hub + business
+  service + consumer app to prove `zanix-remote-api-app-pattern` actually
+  works — a maintainer regression-proofing a library change and a consumer
+  team validating their own trio before shipping run the identical recipe)
+  — this doesn't fit
+  `packages/<repo>/` (the scenario spans more than one repo, and a consumer
+  app like `@zanix/console` isn't one of the 12 covered repos to begin
+  with), and it isn't a project-local skill either: this repo is the only
+  place Zanix skills get authored and distributed from (profile symlinks
+  point into the 12 library repos or here, never into a consumer app's own
+  tree — confirmed via `readlink` against every existing symlink), so a
+  consumer app's own directory is never the right home for a Zanix skill
+  regardless of how project-specific its content is.
 - **`packages/<repo>/`** — distills one specific package's own `docs/`
   (`engineering.md` or equivalent). **Never duplicates that doc — distills
   it.** The package's own docs stay the source of truth; the skill is what
@@ -105,6 +120,19 @@ enough that nobody would guess the symbol was ever here.
 
 ## How skills/agents actually get distributed — corrected from the original plan
 
+**Every new skill or agent is authored inside THIS repo (`claude-skills`)'s
+own `.claude/skills/`/`.claude/agents/` tree, regardless of which tier it
+lands in or how project-specific its content is** — never inside a Zanix
+library repo's own tree, and never inside a consumer app's own tree (a real
+mistake caught mid-authoring: a run-specific runbook for `@zanix/console`
+was drafted into `console/.claude/skills/` before this rule was made
+explicit, on the reasoning that project-local content belongs in the
+project — wrong, since this repo is the only one any profile symlink ever
+points into). This holds even for content that reads as belonging to one
+specific project, like `zanix-remote-api-app-e2e-validation`'s own
+`@zanix/console`-grounded runbook — see that tier's own entry below for why
+it's still authored here, in `ecosystem/`, not in `console`'s own tree.
+
 The founding artifact's original design called for a per-repo
 `scripts/link-skills.sh` symlinking only the relevant tier subset into each
 Zanix repo's own `<repo>/.claude/skills/`. **That script was never built.**
@@ -128,7 +156,15 @@ both paths, don't assume the first one succeeding means the second did too.
 1. **Ground it in a real audit**, not memory — a dispatched research pass
    across the real repos with file:line citations, or an existing artifact
    you verify rather than transcribe.
-2. **Decide the tier** against the criterion above before writing a word.
+2. **Decide a suggested tier and exact path** against the criterion above,
+   then **propose it to the user and get explicit authorization before
+   writing a word** — don't decide silently and only surface the placement
+   after the file already exists. State which bullet above justifies the
+   suggestion and why the obvious-looking alternatives don't fit (a real
+   case: content that looks project-specific enough to tempt a project-local
+   skill still belongs here, in `ecosystem/`, per the bullet above — that
+   distinction is exactly the kind of thing worth confirming up front rather
+   than after the fact).
 3. **Cross-check every load-bearing claim directly** against the real repo
    the skill describes — don't trust the audit's own citations blind.
    **Before writing a rule's own WHY, grep sibling skills for whether that

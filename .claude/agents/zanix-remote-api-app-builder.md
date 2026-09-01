@@ -140,6 +140,10 @@ another dispatch of this agent.
   the way (a missing CLI flag, a backend endpoint this app's client expects
   but the target backend doesn't expose yet) without needing write access
   to the other repo.
+- **`documentation-voice`** — always, whenever the change adds or edits a
+  comment/JSDoc. Present tense, no reference to an authoring session, a
+  plan, or a tracker/issue number (see `datamaster-builder`'s own skill
+  entry for the real incident this guards against).
 
 ## Workflow
 
@@ -185,6 +189,14 @@ another dispatch of this agent.
      service call. Both mechanisms are pre-existing `@zanix/auth`
      primitives — this step composes them, it never adds a new auth
      mechanism of its own.
+   - Setting up the actual `JWK_PRI_<id>`/`JWK_PUB_<id>`/
+     `SERVICE_PERMISSIONS_<id>` `.env` values for this new app and the
+     remote backend it talks to (a real, first-time-setup mesh of 2+
+     identities) is `zanix credentials mesh <this-app-id> <backend-id>`'s
+     job (`@zanix/cli`) — local-dev/first-integration-setup convenience
+     only, never writes a file, never a production secrets-provisioning
+     path. Don't hand-generate/hand-cross-reference these pairs when this
+     command already does it correctly.
 4. **Build the first resource slice** to prove the scaffold is real —
    applying `zanix-remote-api-app-pattern`'s own layers 2-5, but sized to
    whatever the SIMPLEST real resource is, not necessarily full CRUD (the

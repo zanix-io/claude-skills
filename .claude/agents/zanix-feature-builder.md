@@ -80,6 +80,24 @@ inside that scaffold, and for the artifacts the CLI doesn't cover at all.
     (never `deno task znx`, which is bound to the `cli` repo's own
     `deno.jsonc` and would create the project inside `cli` itself instead);
     with the global binary, plain `zanix new <type> <name>`.
+- **The same "CLI-first" discipline applies to LOGIC, not just structure —
+  a real, confirmed mistake to guard against**: hand-writing raw `fetch()`
+  for an outbound HTTP call when the project already has (or should have)
+  a `Connector` extending `@zanix/server`'s `RestClient`/`GraphQLClient`
+  (`zanix generate connector`) is the same class of error as hand-writing a
+  scaffold the CLI would have generated — it silently drops default
+  headers, `ETag` caching, and structured `RestClientError`s the ecosystem
+  primitive already gives for free. Before hand-rolling ANY logic inside a
+  generated skeleton, check whether an existing `@zanix/*` package already
+  covers it: an outbound call → a `Connector`/`RestClient`/`GraphQLClient`
+  (`zanix generate connector`, not a new one by hand, and not raw `fetch`
+  inside a handler/interactor either); encoding/hashing/masking/regex → the
+  matching `@zanix/utils` helper (`utils-encoding-and-network`/
+  `utils-encryption-and-masking`/`utils-validator-core`) before writing a
+  local equivalent; auth flows → `@zanix/auth`'s existing mechanisms before
+  a hand-rolled token/session scheme. This is the same discoverability test
+  `skill-and-agent-authoring`'s Golden Rule applies to a package's own
+  symbol catalog, applied here to a consumer feature's own logic.
 
 ## Real command map — a snapshot, not the ceiling of what's supported
 
@@ -101,6 +119,7 @@ table as a reason to skip a real command that already exists.
 | REST handler | `zanix generate handler <name>` | `rest` is the default `--type`. |
 | GraphQL resolver | `zanix generate handler <name> --type graphql` | Same `handler` command as REST — only the `--type` differs. **Confirmed generator naming bug, don't trust the stub's own parameter name**: the scaffold's `@Query` method signature is `list(_ctx: HandlerContext)`, but `@zanix/server`'s real call site (`graphql/decorators/assembly.ts`) invokes it as `(payload, ctx)` — TWO params — so that single parameter actually receives `payload` (the GraphQL args), not context. Verify the real two-param signature against `@zanix/server`'s own source before filling in logic, don't write `_ctx.req`/`_ctx.session` against what the stub calls `_ctx`. |
 | Socket handler | `zanix generate handler <name> --type socket` | |
+| GraphQL connector (calling an external GraphQL API, from a `space`/`spacecraft` app) | `zanix generate connector <name>` — **`server`/`space-server` only**, per the row above; a plain `space` project (no REST server) has no generator for this and needs the class hand-written, extending `@zanix/server`'s `GraphQLClient` in the same shape | `zanix space dev`/`zanix space build` (any space-family project) run a `graphql-check` step that discovers every real `**/*.client.ts` `GraphQLClient`-shaped export in the project — CLI-generated or hand-written — and validates its queries against that client's real, live external schema; a broken/stale query fails the build instead of surfacing as a runtime error. `--no-graphql-check` opts out. Don't hand-write GraphQL query strings against a schema you haven't confirmed matches what this check will discover. |
 | SSR handler | `zanix generate handler <name> --type ssr` | |
 | Job (asyncmq) | `zanix generate job <name>` | |
 | Subscriber (asyncmq) | `zanix generate subscriber <name>` | |
@@ -222,6 +241,16 @@ bundling) — confirmed working, not just assumed.
   that agent instead of attempting the whole thing here.
 - **`@zanix/auth`/`@zanix/asyncmq`/`@zanix/notifications` usage** — the
   matching package's own topic skills, same consumer-lens caveat as above.
+- **Writing a new import by hand against an already-registered connector/job/
+  template** (not something `zanix generate`/`zanix new` already scaffolded
+  for you) — import the specific subpath the feature actually needs
+  (`@zanix/datamaster/cache`, `@zanix/asyncmq/jobs`, `@zanix/notifications/
+  connectors`, ...) rather than the package's bare root out of habit. Not
+  about protecting other consumers (this app is the end of the chain, nobody
+  downstream depends on it) — about THIS app's own build staying fast:
+  `deno-lazy-dependency-pattern` documents a real, confirmed case where a
+  consumer's own `zanix space build` became slow/broken from exactly this,
+  in its own build, not a downstream one.
 - **A `library`-type project that wants ecosystem-shaped extensibility of its
   own** (its own core-connector slot, its own `@Connector`/`@Provider`
   registration pattern, DI getters) — **the usual "skip the package-extension
@@ -306,6 +335,10 @@ bundling) — confirmed working, not just assumed.
   `cli`/`server`/etc. gap found along the way (step 3 above is the standing
   example) needs no write access to that repo, only `zanix report-issue`
   itself. File automatically, same as every maintainer agent does.
+- **Always**, whenever the change adds or edits a comment/JSDoc →
+  `documentation-voice` — present tense, no reference to an authoring
+  session, a plan, or a tracker/issue number (see `datamaster-builder`'s
+  own skill entry for the real incident this guards against).
 
 ## Workflow
 
@@ -342,7 +375,10 @@ bundling) — confirmed working, not just assumed.
    calling an interactor calling a repository). If both `repository` and
    `rto` were generated for the same entity, reconcile their fields
    manually first — see the note above; they don't share this by
-   themselves.
+   themselves. **Apply the Golden Rule's "CLI-first for logic, not just
+   structure" bullet here** — before writing any outbound call/encoding/
+   auth logic by hand, confirm no existing `@zanix/*` primitive already
+   covers it.
 6. Apply the Definition of done gate below before reporting the feature as
    finished.
 
