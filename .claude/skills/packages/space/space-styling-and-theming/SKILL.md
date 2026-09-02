@@ -184,6 +184,19 @@ custom CSP (replacing the default) must grant its own `style-src` + matching
 nonce — the exact same disclosure already required of a custom policy that
 restricts `script-src` against the inline initial-state script.
 
+This is the SAME per-request nonce a page must separately thread down to
+`@zanix/space-ui`'s `Modal`/`Drawer`/`Toast`/`Tooltip`/`Popover` (each needs
+it for its own functional-positioning `<style>` element, for the identical
+`style-src` reason — see `space-ui-styling`) — `theme.resolve`'s own
+`<style>` block is framework-injected automatically and needs no action
+from the page author, but `space-ui`'s overlay components are not
+framework-injected, so their `nonce` prop needs the value read explicitly
+via `ctx.locals[CSP_NONCE_LOCALS_KEY]` in the page's own `loader` (see
+`space-middleware-and-security`'s "Reaching this nonce from your own
+component tree"). Using `theme.resolve` on a page says nothing about
+whether that page also correctly threads the nonce to any `space-ui`
+overlay it renders — they're two independent consumers of the same value.
+
 **Caching**: a page combining `cacheControl` with a configured
 `theme.resolve` automatically folds `population` into its `ETag` — closing
 the gap where two populations sharing identical loader data could otherwise

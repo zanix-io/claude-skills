@@ -1,6 +1,6 @@
 ---
 name: space-middleware-and-security
-description: The zero-config CSP/security-header defaults every page gets, the three-tier precedence (page > guard > framework default), static headers overrides, defineMiddleware/cspGuard/securityHeadersGuard, and csrfGuard — including a real bug where a misnamed cookie becomes invisible to it. Use when adding a guard, changing a page's security headers, or wiring CSRF protection.
+description: The zero-config CSP/security-header defaults every page gets — including that style-src carries the SAME per-request nonce as script-src, and how to read it via CSP_NONCE_LOCALS_KEY in a loader to pass to @zanix/space-ui's Modal/Drawer/Toast/Tooltip/Popover — the three-tier precedence (page > guard > framework default), static headers overrides, defineMiddleware/cspGuard/securityHeadersGuard, and csrfGuard — including a real bug where a misnamed cookie becomes invisible to it. Use when adding a guard, changing a page's security headers, wiring CSRF protection, or rendering a space-ui overlay component that needs the request's CSP nonce.
 ---
 
 Covers `@zanix/space`'s security-header defaults and its two dedicated
@@ -22,12 +22,35 @@ the real code there before assuming this summary is still accurate.
 ## Zero-config defaults
 
 Every page gets, automatically: `Content-Security-Policy: default-src
-'self'; script-src 'self' 'nonce-<random per request>'`,
-`X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`,
-`X-Content-Type-Options: nosniff`. The nonce is generated fresh per request
-by `SpacePageController`, passed to React's `renderToReadableStream({
-nonce })`, and matched in both the CSP header and the script tag's `nonce`
-attribute.
+'self'; script-src 'self' 'nonce-<random per request>'; style-src 'self'
+'nonce-<same per-request nonce>'`, `X-Frame-Options: SAMEORIGIN`,
+`Referrer-Policy: strict-origin-when-cross-origin`, `X-Content-Type-Options:
+nosniff`. The nonce is generated fresh per request by `SpacePageController`,
+passed to React's `renderToReadableStream({ nonce })`, and matched in both
+the CSP header and the script tag's `nonce` attribute. **`style-src` carries
+the exact same nonce**, not a separate one — that's what lets
+`defineSpaceApp({ theme: { resolve } })`'s own resolved `<style nonce>`
+override block keep working zero-config (`space-styling-and-theming`).
+
+**Reaching this nonce from your own component tree**: nothing hands it to
+`component`/`RealComponent` as a prop automatically — a page that renders
+`@zanix/space-ui`'s `Modal`/`Drawer`/`Toast`/`Tooltip`/`Popover` (each of
+which needs this same nonce for its own functional-positioning `<style>`
+element, see `space-ui-styling`) must read it explicitly in its own
+`loader(ctx)`, the same pattern already used for `csrfGuard`'s token below:
+
+```ts
+import { CSP_NONCE_LOCALS_KEY } from '@zanix/space'
+
+loader = (ctx) => ({ nonce: ctx.locals[CSP_NONCE_LOCALS_KEY] as string | undefined })
+```
+
+then pass that resolved `nonce` down as the prop each `space-ui` component
+accepts. Omitted, these five components still render — just via a `<style>`
+tag with no `nonce` attribute, which a strict nonce-only `style-src` (the
+zero-config default) then blocks; there is no error surfaced for this
+today, only a visually broken/unpositioned overlay, so this is easy to miss
+until actually testing under the real default CSP.
 
 ## Overriding: `static headers`, app-wide default, and merge semantics
 
@@ -170,3 +193,8 @@ a substitute for apps not using `@zanix/auth` at all.
 - [ ] Does any new cookie this app sets start with `X-Znx-` — otherwise
       `cookiesGuard` silently hides it from every guard that reads
       `ctx.cookies`?
+- [ ] Does a page rendering `Modal`/`Drawer`/`Toast`/`Tooltip`/`Popover`
+      read the request's CSP nonce (`ctx.locals[CSP_NONCE_LOCALS_KEY]` in its
+      own `loader`) and pass it down as that component's `nonce` prop? Under
+      the zero-config default `style-src`, skipping this doesn't error — the
+      overlay just silently fails to position.

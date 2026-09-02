@@ -1,6 +1,6 @@
 ---
 name: space-ui-styling
-description: @zanix/space-ui's headless styling architecture — className as the only styling prop, data-space-ui as a stable (not styling) selector hook, the theme/ vs shared/ starter templates, --space-* token composition, and why BEM/Tachyons aren't part of this package. Use when adding data-space-ui to a new component, writing/reviewing an optional stylesheet against this package's components, or deciding whether new CSS belongs in theme/ or shared/.
+description: @zanix/space-ui's headless styling architecture — className as the only styling prop, data-space-ui as a stable (not styling) selector hook, the theme/ vs shared/ starter templates, --space-* token composition, why BEM/Tachyons aren't part of this package, and the nonce prop Modal/Drawer/Toast/Tooltip/Popover accept to stay CSP-compliant (a component-rendered `<style nonce>` element plus, for Tooltip/Popover's dynamic offset, CSSOM rule mutation — never an inline style attribute or an external stylesheet). Use when adding data-space-ui to a new component, writing/reviewing an optional stylesheet against this package's components, deciding whether new CSS belongs in theme/ or shared/, or wiring a component's functional positioning under a strict CSP.
 ---
 
 File:line references point at `~/Documents/Development/ZanixLibraries/space-ui`
@@ -81,11 +81,96 @@ either, both, or neither:
 
 **A component's functional correctness never depends on either template
 being loaded** — e.g. `Modal`/`Drawer`'s stacking (`z-index`) stays owned by
-each component's own inline `style`, deliberately not CSS-dependent, so
-headless correctness holds even with zero CSS ever imported. Don't move a
-functional concern like stacking order into an optional stylesheet just
-because a token exists for it — that would make headless behavior depend on
-an optional file, which is a regression, not a simplification.
+each component itself, deliberately not CSS-dependent, so headless
+correctness holds even with zero CSS ever imported. Don't move a functional
+concern like stacking order into an optional stylesheet just because a token
+exists for it — that would make headless behavior depend on an optional
+file, which is a regression, not a simplification.
+
+## Functional positioning under a strict CSP: `nonce`
+
+`Modal`, `Drawer`, `Toast` (via `ToastProvider`), `Tooltip`, and `Popover`
+all need real `position`/`z-index` (plus a per-instance anchor) to function
+as an overlay at all — the same "functional, not decorative" exception
+above, not a headless regression. Applying that as an inline `style`
+attribute is a real, confirmed-in-browser violation of a nonce-based
+`style-src` CSP — `@zanix/space`'s own zero-config default is exactly this
+shape (`space-middleware-and-security`) — since a CSP nonce never applies to
+a `style="..."` attribute, only to a `<style>` element/`<link
+rel=stylesheet>`, and browsers block `element.style.setProperty(...)`/
+`.style.cssText = ...` under the same rule too, so CSSOM-mutating an
+element's own inline style doesn't sidestep it either.
+
+All five components instead render their own `<style nonce={nonce}>`
+element, built once at module scope from the same style-object constants
+they always used (`MODAL_POSITION_STYLE`/`MODAL_Z_INDEX`/
+`DRAWER_SIDE_STYLE`/`DRAWER_Z_INDEX`/…), keyed off
+`data-space-ui`/`data-position`/`data-side` attribute selectors instead of
+an inline attribute — this keeps "zero CSS import required" intact (the
+rule ships with the component, not an external stylesheet the consumer has
+to remember to import) while becoming CSP-compliant once a nonce is
+supplied. See `shared/overlay-position-css.ts` (`buildOverlayCss`) for the
+shared CSS-building helper, and each component's own `nonce?: string` prop
+doc for the per-component contract. A consumer under no strict CSP passes
+nothing — the `<style>` tag still applies exactly as before; a page under a
+strict nonce-based `style-src` (like `@zanix/space`'s own default) must
+thread its real per-request nonce down as this prop, or these five
+components' positioning silently fails to apply. There is no
+external-stylesheet alternative offered for this — moving it there would
+require every consumer to import an extra file just to get a working
+overlay, breaking headless-by-default for everyone, not just strict-CSP
+consumers.
+
+**`Tooltip`/`Popover`'s own genuinely dynamic positioning is covered too**,
+not just the static anchor: their panel's real offset — a `transform:
+translate(x, y)` (plus `visibility`/`pointer-events`) recomputed every
+render from a live `usePosition` measurement — can't be expressed as a
+static rule the way a fixed enum-keyed constant can, so it doesn't use
+`buildOverlayCss`. Instead it's applied to a CSSOM rule scoped to that one
+component instance (`[data-space-ui='tooltip'][data-tooltip-id='...']`),
+inserted once via `sheet.insertRule(...)` into the SAME `<style
+nonce={nonce}>` element already rendering the static rule, then mutated on
+every position update via `CSSStyleRule.style.setProperty(...)` — never
+`HTMLElement.style`, which is what `style-src-attr` actually covers. A CSP
+nonce authorizes the `<style>` ELEMENT itself once; CSSOM mutation of a rule
+already living inside that authorized element is a distinct code path from
+mutating an inline `style` attribute — the same technique CSP-compatible
+CSS-in-JS runtimes (styled-components' "speedy" mode, Emotion) use. Applies
+`useLayoutEffect` (not `useEffect`) so the mutation lands before paint, same
+as the synchronous inline-style update it replaces — a plain `useEffect`
+would cause a visible flicker/jump on every scroll-triggered position
+update, since `autoUpdate` re-measures continuously while open, not just on
+mount.
+
+Don't reach for `CatalogIcon`/any asset-backed styling mechanism to solve a
+problem like this one — the fix stays entirely self-contained (a
+component-rendered `<style>` element plus CSSOM), never an external asset
+the consumer must supply an `href` for. That would reintroduce the same
+"depends on an optional file" regression this section opened with.
+
+**A real, cosmetic-only React hydration warning this introduces, and why the
+fix lives outside `render.ts`.** A browser clears an applied `nonce`
+CONTENT ATTRIBUTE back to `""` right after using it (spec'd behavior — the
+real value survives only on the element's own `.nonce` property). React's
+hydration mismatch check special-cases this for `<script>` (reads `.nonce`
+instead of the attribute) but not for `<style>`, so a server-rendered
+`<style nonce="real-value">` logs "A tree hydrated but some attributes of
+the server rendered HTML didn't match..." on every page load under a
+nonce-based CSP — confirmed live against a real `@zanix/space` page;
+functionally harmless (the nonce still applies, CSP still passes), just
+noisy. The fix, `suppressHydrationWarning: true`, is a REACT-ONLY convention
+— Preact's `h` has no equivalent special case (an unknown prop name falls
+through to a literal `setAttribute`), so adding it directly in the shared
+`render.ts` would leak a real `suppresshydrationwarning="true"` attribute
+into Preact's own rendered/SSR markup. Each of the five components' React
+binding (`index.ts`, never `index.preact.ts`) instead passes
+`shared/create-element-nonce-hydration-fix.ts`'s
+`createElementWithNonceHydrationFix` in place of raw `createElement` — it
+adds `suppressHydrationWarning` only to a `<style>` element that actually
+carries a `nonce` prop key, leaving everything else (and every Preact
+binding) untouched. If a future component needs its own `<style nonce>`
+element, reuse this same wrapper in its `index.ts` rather than reinventing
+the fix or adding `suppressHydrationWarning` to `render.ts` directly.
 
 ## `--space-*` tokens: compose, never invent a naming scheme
 
@@ -136,3 +221,19 @@ with that choice.
 - [ ] Does new CSS reference only semantic `--space-*` tokens (never a
       primitive directly, never a literal value), and never invent a new
       token naming scheme of its own?
+- [ ] If a new/changed component needs functional `position`/`z-index` (or
+      any other genuinely functional, non-decorative style) to work at all,
+      does it render its own `<style nonce={nonce}>` element instead of an
+      inline `style` attribute — never an inline attribute (blocked by a
+      nonce-based CSP with no workaround), and never an external stylesheet
+      the consumer must import (breaks headless-by-default for everyone, not
+      just strict-CSP consumers)? If any part of that style is genuinely
+      dynamic (recomputed every render), does it use CSSOM rule mutation
+      inside that same `<style>` element via `useLayoutEffect`, not
+      `HTMLElement.style`?
+- [ ] Does a new `<style nonce={nonce}>` element's React binding pass
+      `createElementWithNonceHydrationFix`
+      (`shared/create-element-nonce-hydration-fix.ts`) instead of raw
+      `createElement`, to avoid a real (cosmetic-only) hydration-mismatch
+      warning on every page load — and does the Preact binding stay on raw
+      `h`, never `suppressHydrationWarning`, which Preact doesn't recognize?

@@ -10,6 +10,15 @@ read the real code there before assuming this summary is still accurate.
 
 ## Golden rule (token savings)
 
+- Trust `this.providers.get('notifications')`/`this.providers.get(NotifierProvider)`
+  (both resolve the same registered instance — `@zanix/notifications` registers
+  `NotifierProvider` under the `'notifications'` core-provider slot AND under its
+  own class reference, the identical dual-registration `@zanix/auth`'s
+  `ZanixAuthProvider` uses, see `auth-jwt-and-sessions`) for anything inside a
+  Zanix-managed class. `new NotifierProvider()` is only for genuinely standalone
+  usage outside the ecosystem's own lifecycle (see the `onDestroy()` note below) —
+  reaching for it inside a handler/interactor bypasses the pooled, per-request
+  `SCOPED` instance and its connector lifecycle for no reason.
 - Copy the send-call shape from this skill's own examples rather than
   re-reading `NotifierProvider`'s source for routine sends — the API surface
   is small and stable.
@@ -17,7 +26,9 @@ read the real code there before assuming this summary is still accurate.
 ## Sending
 
 ```ts
-const provider = new NotifierProvider() // or this.providers.get('notifications') inside the ecosystem
+// Inside a Zanix-managed class (handler/interactor/etc.) — either form works:
+const provider = this.providers.get('notifications')
+// const provider = this.providers.get(NotifierProvider) — same instance, class form
 
 await provider.email({
   to: 'recipient@example.com', subject: 'Welcome to Zanix',
@@ -147,6 +158,10 @@ reason.
 
 ## Checklist before sending or reviewing a send call
 
+- [ ] Is the provider accessed via `this.providers.get('notifications')`/
+      `this.providers.get(NotifierProvider)` inside a Zanix-managed class,
+      rather than `new NotifierProvider()` (standalone-only) or a hand-rolled
+      connector call?
 - [ ] Is `content` or `zanixTemplate`+`data` used, never both (a type error
       either way, but worth confirming the intent matches)?
 - [ ] For a `mail` trigger action's `body.template`, is the referenced

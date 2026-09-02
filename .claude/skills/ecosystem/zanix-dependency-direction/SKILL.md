@@ -1,6 +1,6 @@
 ---
 name: zanix-dependency-direction
-description: Dependency-direction and package-tier rules across the Zanix ecosystem (@zanix/server, @zanix/datamaster, @zanix/auth, @zanix/notifications, @zanix/asyncmq, @zanix/admin, @zanix/core, plus @zanix/app/@zanix/space as consumers of the same tiers). Use before adding any new cross-package import, designing a registry that crosses package boundaries, or deciding which tier a brand-new package belongs to.
+description: Dependency-direction and package-tier rules across the Zanix ecosystem (@zanix/server, @zanix/datamaster, @zanix/auth, @zanix/notifications, @zanix/asyncmq, @zanix/admin, @zanix/core, plus @zanix/app/@zanix/space as consumers of the same tiers), plus two other axes of a healthy @zanix/* dependency graph: intra-package circular imports (`zanix check-cycles`) and a `@zanix/*` package resolving to more than one version at once in `deno.lock` (`zanix check-duplicates`) — the latter applies to consumer apps too, not just the 12 library repos. Use before adding any new cross-package import, designing a registry that crosses package boundaries, deciding which tier a brand-new package belongs to, or bumping any `@zanix/*` version range (maintainer or consumer).
 ---
 
 This skill exists to stop the same dependency-direction mistakes from being
@@ -430,6 +430,139 @@ within one package** (file-level version of the checklist below):
       entrypoint import order. A later change to which file is the real
       entrypoint can reintroduce the exact same crash with zero changes
       inside the cycle itself.
+
+## A third, different-axis hazard: duplicate resolved package versions
+
+Direction and intra-package cycles are both about the SHAPE of the import
+graph. This axis is about something else entirely: whether a single
+`@zanix/*` package name resolves to MORE THAN ONE version at once inside the
+same `deno.lock` — a real, shipped incident, not a hypothetical, and one that
+hits maintainer (library) repos and consumer apps alike, unlike the two axes
+above (which are library-repo-internal only).
+
+**How it happens — two distinct triggers, not one.** (1) **A direct consumer
+bump**: a downstream Zanix package (e.g. `@zanix/core`) still pins a
+pre-major range for a dependency (`jsr:@zanix/auth@~0.8.1`) internally, while
+a consumer app's own `deno.jsonc` pulls that same dependency directly at a
+newly-published major (`jsr:@zanix/auth@^1.0.0`). The two ranges don't
+overlap, so Deno cannot collapse them into one resolution — it keeps BOTH
+`@zanix/auth@0.8.1` AND `@zanix/auth@1.0.0` live side by side in the same
+`deno.lock`. This is a real, confirmed incident: a consumer app bumped its own
+`@zanix/auth`/`@zanix/notifications` ranges to new majors published the same
+day, while the `@zanix/core` version it depended on (published days earlier)
+still internally pinned the pre-major ranges — producing exactly this
+duplicate resolution. (2) **Silent transitive drift through an intermediate
+maintainer package — no consumer action at all**: a package's OWN
+already-compatible range (`@zanix/admin@^2.1.0` in `@zanix/core`) can start
+resolving differently the moment the package it points at re-publishes a
+patch/minor that itself now depends on the new majors — `@zanix/admin@2.2.0`
+depending on `@zanix/auth@1`/`@zanix/notifications@1`, while `@zanix/core`'s
+OWN direct pin (`@zanix/notifications@^0.7.0`) never moved. **This is not
+hypothetical — it's the real, current state of `@zanix/core@3.0.0` as
+published on JSR today**: re-resolving its `deno.jsonc` fresh (see the
+checklist below) shows `@zanix/auth` and `@zanix/notifications` BOTH already
+duplicated, latent, with zero consumer involvement. Trigger (2) is arguably
+the more dangerous of the two, because nothing about it looks like a version
+bump from the maintainer's own point of view — their own `deno.jsonc` didn't
+change at all.
+
+**Why it breaks, not just bloats.** This isn't merely two copies of code on
+disk — `@zanix/server`'s DI container keys a target by the IDENTITY of its
+own class reference, not its name: `getTargetKey`
+(`server/src/utils/targets.ts:52`) assigns a key via a `WeakMap` keyed by
+object identity (the class constructor itself, not its name), deliberately so
+two unrelated classes sharing a name never collide. Every `@Provider`/
+`@Connector` decorator also validates
+with `instanceof` against a base class
+(`server/src/modules/infra/providers/decorators/assembly.ts:30`) — also
+identity-based. When a package gets duplicated in the lockfile, whichever
+physical copy gets decorated registers under ITS OWN key; a caller that
+resolves the OTHER copy (e.g. an app importing `AuthService` from the copy its
+own `deno.jsonc` range resolves to, while `@zanix/core`'s internal copy is the
+one actually decorated) finds nothing registered under that key, and
+`BaseInstancesContainer#getInstance`
+(`server/src/modules/program/metadata/targets/instances.ts:144`) throws
+`TypeError: Target is not a constructor`, with
+`targetName: "'unknown': there is no metadata information"` — in production,
+not at build time, since neither `deno check` nor a type system catches two
+physically different runtime objects sharing a type shape.
+
+**The real, built, automated mechanism for this axis is `zanix
+check-duplicates`** (`@zanix/cli`, `cli/src/commands/check-duplicates/`) — a
+pure `deno.lock` inspection (no dependency resolution of its own): it reads
+the lockfile's `specifiers` map, groups every `jsr:@zanix/*` specifier by
+package name, and flags any name resolving to more than one distinct version,
+naming which specifier(s) produced each. Run it directly:
+`zanix check-duplicates --path <project-root>`, exits non-zero on a confirmed
+finding — see `cli/docs/check-duplicates.md`.
+
+**Golden rule, both sides of the ecosystem:**
+
+- **Maintainer (publishing one of the 12 Zanix packages)**: when you publish a
+  breaking major of a package OTHER Zanix packages depend on (e.g. bumping
+  `@zanix/auth` 0.x → 1.0), republish — or at minimum widen the internal
+  range of — every direct dependent (`@zanix/core`, `@zanix/notifications`,
+  anything that imports it) within the same release window. Leaving a
+  downstream package's own `deno.jsonc` pointing at the pre-major range
+  indefinitely is what opens the non-overlapping-ranges gap in the first
+  place; it's not a latent risk until a consumer actually hits it, it's
+  already a live footgun the moment both majors are published.
+- **Consumer (an app built on the ecosystem)**: before bumping a direct
+  `@zanix/*` dependency to a new major in your own `deno.jsonc`, confirm every
+  OTHER `@zanix/*` package you depend on — directly or transitively through
+  something like `@zanix/core` — can resolve to that same new major too. If
+  one of them can't yet (its own maintainer hasn't republished against the
+  new major), either hold your own range back until it has, or treat the
+  resulting duplicate as a real, confirmed-breaking incident, not a
+  lockfile-hygiene nitpick.
+- **Both sides**: wire `zanix check-duplicates` into CI (`zanix prepare -g`
+  scaffolds this automatically, right after `check-cycles`, into
+  `.github/workflows/ci.yml`) — but know its real limit before trusting it as
+  the only line of defense (see the next paragraph).
+
+**A confirmed real limit of the CI wiring above: it only catches trigger
+(1), never trigger (2).** A PR-triggered CI job runs `check-duplicates`
+against whatever `deno.lock` is already checked out — it never re-resolves
+anything. That catches a duplicate a PR itself introduces (a direct range
+bump landing in the same diff as the lock update), but it is structurally
+blind to trigger (2) above: drift introduced by ANOTHER package's own new
+release, resolving differently on a fresh install than what the committed
+lock still reflects. Confirmed empirically: `@zanix/core`'s own committed
+`deno.lock` reports clean against `check-duplicates` today, while a FRESH
+resolution of the exact same `deno.jsonc` reports the real duplicate
+described above — the committed lock is simply stale relative to what JSR
+now resolves. **The per-PR CI gate is necessary but not sufficient on its
+own** — pair it with a periodic (e.g. scheduled/cron) job that deletes
+`deno.lock`, re-resolves fresh, and runs `check-duplicates` against THAT —
+the only way to catch trigger (2) before a consumer's own fresh install hits
+it first.
+
+**Checklist before bumping any `@zanix/*` version range** (maintainer or
+consumer) — and worth running periodically even with no bump in flight, per
+trigger (2) above:
+
+- [ ] Force a fresh resolution before checking — a committed `deno.lock`
+      can report false-clean (confirmed real, see above): `rm deno.lock &&
+      deno cache <entrypoint>` (add `--reload` instead of deleting first if
+      you want to keep the old lock as a diff reference; add
+      `--min-dep-age=0` if anything involved was published within Deno's
+      default minimum-dependency-age window).
+- [ ] Run `zanix check-duplicates --path <project-root>` (the real, built
+      tool — see above) against that freshly re-resolved `deno.lock`, not
+      the one already sitting in the tree. A confirmed finding names the
+      exact package and the conflicting specifiers; a clean run confirms
+      every `@zanix/*` package resolves to exactly one version.
+- [ ] If you're a maintainer publishing a new major: have you checked (or at
+      least flagged) every other Zanix package that depends on the package
+      you're bumping, so their own ranges get widened/republished in the same
+      window rather than drifting?
+- [ ] If you're a consumer bumping a direct range: does anything else in your
+      own `deno.lock` depend on the SAME package through a different,
+      still-narrower range (e.g. via `@zanix/core`)? If so, the bump isn't
+      safe yet on its own.
+- [ ] Is the CI check actually wired in (`check-duplicates` present and
+      un-commented in `.github/workflows/ci.yml`), not just run manually
+      once and forgotten?
 
 ## Checklist before adding a cross-package import
 

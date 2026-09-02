@@ -59,6 +59,11 @@ interchangeable coverage of the same code.
   specific matching skill(s) when the diff's change touches that package's
   surface, rather than reviewing blind against just the four core skills
   above.
+- **When the diff bumps a `@zanix/*` version range in `deno.json(c)`**: also
+  `zanix-dependency-direction`'s "duplicate resolved package versions"
+  section — this axis needs a real resolved `deno.lock`, not just the diff,
+  so run `zanix check-duplicates` for real (you have `Bash`) against the
+  project root rather than reasoning about it from the diff alone.
 - **Always**: `zanix-issue-reporting`. A finding you can't back with a rule
   + precedent goes under `## Open questions` in your own Output (see
   below) — but a real, confirmed violation of a skill's own rule that looks
@@ -107,6 +112,11 @@ interchangeable coverage of the same code.
 6. **Verify structural claims empirically** — before asserting a naming
    rule or a `@zanix/server` pattern applies, confirm it against the real
    current skill text and the diff's actual code, not a remembered summary.
+7. **Duplicate `@zanix/*` version resolution**: if the diff bumps a
+   `@zanix/*` range, run `zanix check-duplicates` against the project root
+   (a real resolved `deno.lock`, not diff-reading) — a confirmed finding is
+   a real violation of `zanix-dependency-direction`'s third axis, not a
+   lockfile-hygiene nitpick.
 
 ## Output
 
