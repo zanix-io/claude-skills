@@ -100,25 +100,42 @@ real recipes for those two project types.
 
 ## When a new `generate` artifact has no typed leaf to hang a Recipe entry on
 
-Not every artifact `zanix generate` can produce has somewhere to go in
-`zanix
+Not every artifact `zanix generate` can produce has somewhere to go in `zanix
 new`'s own tree — the leaf types a project type's tree can declare
-(`ZanixSpaceSrcTree`, etc.) are published from `@zanix/utils`, outside `cli`'s
-own control, and only declare the leaves that already exist there (`routes`,
-`comets` for `ZanixSpaceSrcTree` — confirmed real by reading
-`@zanix/utils/src/typings/zanix.ts` directly, not assumed). **Before deciding a
-new generator "should" wire into a project type's Recipe (step 3 of
+(`ZanixSpaceSrcTree`, etc., `src/typings/tree.ts`) only declare the leaves that
+already exist there (`routes`, `comets` for `ZanixSpaceSrcTree` — confirmed real
+by reading that file directly, not assumed). **Before deciding a new generator
+"should" wire into a project type's Recipe (step 3 of
 `cli-artifact-generators`'s own workflow), confirm a typed leaf for it actually
 exists** — don't assume its absence is an oversight to fix inside `cli`. If none
-exists, wiring it in would require a `@zanix/utils` release first, which is out
-of scope for a `cli`-only change: document the artifact as `generate`-only (no
-`zanix new` seeding) until that leaf exists, the same precedent already set for
-`component` (see `docs/generate.md`) — `middleware` used to be cited here too,
-but it's since been wired into `main.ts`'s `MIDDLEWARES_RECIPE` and is now
-seeded by every non-`library` project type, so it's no longer a live example of
-this case. This is a real, recurring case, not a one-off — check for it
-explicitly instead of treating every new generator as automatically
-Recipe-eligible.
+exists, document the artifact as `generate`-only (no `zanix new` seeding) until
+a leaf is added, the same precedent already set for `component` (see
+`docs/generate.md`) — `middleware` used to be cited here too, but it's since
+been wired into `main.ts`'s `MIDDLEWARES_RECIPE` and is now seeded by every
+non-`library` project type, so it's no longer a live example of this case. This
+is a real, recurring case, not a one-off — check for it explicitly instead of
+treating every new generator as automatically Recipe-eligible.
+
+**These tree-modeling types (`ZanixFolderTree`, `ZanixBaseFolder`,
+`ZanixSrcTree`/`ZanixSrcTreeMap`, `ZanixServerSrcTree`, `ZanixSpaceSrcTree`,
+`ZanixLibrarySrcTree`, `ZanixFolderGenericTree`, `ZanixTemplatesRecord`,
+`ZanixLocalContentProps`, `ZanixTemplates`, `ZanixProjectsFull`) live in `cli`
+itself now** (`src/typings/tree.ts`), not `@zanix/utils` — moved there since
+`cli` was always their only real consumer across the whole ecosystem (zero hits
+grepping every other `@zanix/*` package), the same "moved to `cli`, its only
+real consumer" pattern `docs/engineering.md` §5/§7 and `@zanix/utils`'s own
+`docs/helpers.md`/`docs/types.md` already document for the git-hook/editor
+helpers and the esbuild `CompilerOptions`. Only `ZanixProjects` itself stayed in
+`@zanix/utils` — it's genuinely shared vocabulary, part of
+`ZanixGlobal['Znx']['config'].project`, the runtime global `@zanix/server` and
+consumer apps read, not scaffold-tree modeling. **Practical consequence: adding
+a new leaf to one of these types (e.g. a `components` leaf on
+`ZanixSpaceSrcTree`) is now a plain `cli`-only edit to `src/typings/tree.ts` —
+it no longer needs a `@zanix/utils` release first.** That's a separate decision
+from whether to actually WIRE a new leaf into a Recipe, though — adding a typed
+leaf and adding scaffold content for it are still two different, independently
+justified changes; don't conflate "the type can exist now" with "it should be
+seeded by `zanix new` today."
 
 ## Presets
 
@@ -207,8 +224,10 @@ overwrites — every generated project is a fresh directory.
       static copy?
 - [ ] For a NEW generator being considered for Recipe wiring: does a typed leaf
       for it actually exist in the project type's own tree type
-      (`@zanix/utils`-published), or is "not seeded by `zanix new` yet" the
-      correct, documented state until that leaf ships?
+      (`src/typings/tree.ts`, `cli`'s own now), or is "not seeded by `zanix new`
+      yet" the correct, documented state until that leaf is added — and is
+      adding the leaf itself kept as a separate decision from wiring it into a
+      Recipe?
 - [ ] Is a genuinely new, non-generator-backed static asset actually
       non-API-coupled and generator-unit-shaped-nothing (the `library`/
       `@zanix/utils` exception), or should it really be a generator?

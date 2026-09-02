@@ -102,6 +102,15 @@ initial-state script won't survive a strict `script-src`. There's no
 decided before streaming starts, so component-tree rendering can never
 influence them.
 
+**A page whose resolved CSP genuinely differs from another page's (or from
+a guard's per-request policy) is automatically safe under Orbit's
+client-side navigation** — a browser never applies a later `fetch()`
+response's own headers to an already-active document, so Orbit itself
+detects the mismatch and falls back to a real navigation rather than
+swapping the fragment in under the wrong policy. See
+`space-orbit-navigation`'s own "CSP during navigation" section for the
+mechanism; nothing here needs configuring for this to work.
+
 ## Guards: `defineMiddleware`, `cspGuard`, `securityHeadersGuard`, and precedence
 
 ```ts

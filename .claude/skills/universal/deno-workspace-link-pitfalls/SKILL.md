@@ -26,13 +26,21 @@ over-materialization problem this linking technique is usually deployed to verif
   project's own `"links": ["../space"]` is silently ignored whenever it's reached through a
   dynamically-imported entry file belonging to a DIFFERENT local-checkout tool (e.g. `@zanix/cli`
   itself run via `deno run -A ../cli/mod.ts space dev`, which resolves the imported project's bare
-  specifiers against `cli`'s own `deno.jsonc`, not the project's). `@zanix/cli`'s own
-  `warn-unhonored-links.ts` (`warnUnhonoredProjectLinks`, wired into `zanix space dev`/`zanix space
-  build`) is the real, shipped mitigation for this one case — a loud warning naming the mismatch,
-  not a fix (genuinely fixing it would need running the project's whole module graph in a separate
-  process under a merged import map — disproportionate for a local-dev-only workflow). See
-  `@zanix/cli`'s own `docs/space.md` ("Local package links and running `@zanix/cli` from a
-  checkout") for the user-facing version of this.
+  specifiers against `cli`'s own `deno.jsonc`, not the project's). **STALE CLAIM, confirmed wrong
+  2026-09-02**: this used to say `@zanix/cli`'s own `warn-unhonored-links.ts`
+  (`warnUnhonoredProjectLinks`) ships as a real, wired-in mitigation for this — a real `find`/`grep`
+  against the actual `cli` checkout (`src/`) turned up NEITHER the file NOR the function anywhere.
+  Either it was removed, never actually shipped despite being documented here, or this entry was
+  wrong from the start — don't cite it as real until re-confirmed against the checkout. Check
+  `@zanix/cli`'s own `docs/space.md` for whatever the CURRENT real behavior is, and re-verify before
+  trusting either this entry or that doc blindly. **A real, reproduced instance of this exact
+  footgun** (same day): running `zanix space dev` via a LOCAL `cli` checkout entrypoint resolved a
+  consuming project's own npm dependency's CSS asset (`graphiql/graphiql.css`) under the `cli`
+  checkout's OWN `node_modules`, not the served project's — reproduced with no warning of any kind
+  surfaced, consistent with the mitigation not actually existing. See `space-styling-and-theming`'s
+  own entry on this for the full incident (including a separate, DISPROVEN hypothesis that first
+  blamed `@zanix/space`'s own dev-engine CSS handling, before this linking mechanism was confirmed
+  as the real, much more likely cause via a clean repro against a non-linked project).
 - **Every one of these footguns shares the same shape**: the resolution graph LOOKS correctly
   linked (a `deno info`/`deno run` warning cites the right local path for the package you meant to
   link), so "is the package actually linked" reads as a settled question — but ONE specific file,
