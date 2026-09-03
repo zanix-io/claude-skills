@@ -117,7 +117,8 @@ fragment isn't a document). Before ever swapping a fetched (or prefetched —
 `prefetch.ts` now carries a fragment's `Content-Security-Policy` header
 alongside its body for exactly this) fragment into the live DOM, `orbit.ts`
 compares that fragment response's own header, normalized the same way,
-against the active document's embedded signature. A genuine mismatch
+against the active document's embedded signature (confirmed via
+`csp-signature.test.ts`'s own suite and `orbit.ts:203`). A genuine mismatch
 degrades to a real navigation instead of swapping — the ONE thing that can
 actually apply a different CSP correctly. A page with no CSP configured, or
 navigating between two pages sharing the exact same resolved policy (the
