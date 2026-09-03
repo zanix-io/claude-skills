@@ -1,6 +1,6 @@
 ---
 name: space-orbit-navigation
-description: Client-side navigation ("Orbit") — initOrbit's prefetch config, how a navigation fragment carries and dedupes the destination page's CSS (avoiding FOUC), renderToResponse/useRequestCache, readInitialState, the initialState serialization contract (and its real footguns with Date/Map/Set/circular refs), and the graceful-degradation guarantee. Use when configuring prefetch, passing data through initialState, debugging a flash of unstyled content on navigation, or debugging an Orbit navigation.
+description: Client-side navigation ("Orbit") — initOrbit's prefetch config, how a navigation fragment carries and dedupes the destination page's CSS (avoiding FOUC), how a fragment whose own resolved CSP differs from the active document's automatically falls back to a real navigation instead of applying under the wrong policy, renderToResponse/useRequestCache, readInitialState, the initialState serialization contract (and its real footguns with Date/Map/Set/circular refs), and the graceful-degradation guarantee. Use when configuring prefetch, passing data through initialState, debugging a flash of unstyled content on navigation, debugging a CSP violation that only reproduces via an in-app link click, or debugging an Orbit navigation.
 ---
 
 Orbit swaps a page's outlet fragment client-side instead of a full navigation
@@ -53,12 +53,14 @@ that link specifically.
 
 ## Graceful degradation
 
-Any non-2xx fragment response (404/500/network failure) silently degrades to
-a full navigation — a broken Orbit fetch is never a broken UX, only a
-slightly slower one. HTTP caches in front of the app must key on the
-`Vary: X-Znx-Space-Navigate` header too (set unconditionally by every
-response `SpacePageController`/`createNotFoundHandler` produce), not just
-rely on Orbit's own client runtime to always request the right variant.
+Any non-2xx fragment response (404/500/network failure), or a fragment whose
+own resolved CSP differs from the currently active document's (see "CSP
+during navigation" below), silently degrades to a full navigation — a broken
+or CSP-unsafe Orbit swap is never a broken UX, only a slightly slower one.
+HTTP caches in front of the app must key on the `Vary: X-Znx-Space-Navigate`
+header too (set unconditionally by every response
+`SpacePageController`/`createNotFoundHandler` produce), not just rely on
+Orbit's own client runtime to always request the right variant.
 
 **Current limitation**: nested layouts aren't preserved across sibling
 routes yet — navigating `/products/1` → `/products/2` re-renders everything
@@ -87,6 +89,47 @@ stylesheet share one in-flight load instead of inserting a duplicate
 that; the manifest itself stays server-side, read fresh from each fragment.
 A page whose CSS is already fully covered triggers none of this — no
 `<link>` insertion needed at all, the common case.
+
+## CSP during navigation
+
+**Real, fixed bug — the mechanism, so a future regression is recognizable.**
+A document's active `Content-Security-Policy` is fixed at the navigation
+that created it: no later `fetch()` response, regardless of its own
+headers, is ever consulted by the browser to update it — a real browser
+security-model constraint, not something `@zanix/space` itself could ever
+work around client-side. Before the fix below, a destination page whose own
+resolved CSP genuinely differed from the currently active one (a stricter
+or looser per-page `Page({ headers: { csp } })`, or a guard-registered
+`cspGuard()` that varies the policy per request rather than per route) still
+got its fragment swapped in via Orbit — silently enforced against the WRONG,
+still-active policy, even though the fragment's own response DID carry the
+correct header for the destination.
+
+**The fix, so it's clear this is already handled, not something to route
+around by hand.** Every full-document render embeds its own resolved CSP,
+normalized (its own per-request nonce replaced with a placeholder so two
+navigations to the same page never look like "a different policy"), as a
+`<meta name="x-space-csp-signature">` — see `csp-signature.ts`'s own module
+doc (`normalizeCspSignature`/`withCspSignatureMeta`, shared by both
+renderers so this behaves identically under `--renderer=react` and
+`--renderer=preact`; never emitted into a fragment's own head, since a
+fragment isn't a document). Before ever swapping a fetched (or prefetched —
+`prefetch.ts` now carries a fragment's `Content-Security-Policy` header
+alongside its body for exactly this) fragment into the live DOM, `orbit.ts`
+compares that fragment response's own header, normalized the same way,
+against the active document's embedded signature (confirmed via
+`csp-signature.test.ts`'s own suite and `orbit.ts:203`). A genuine mismatch
+degrades to a real navigation instead of swapping — the ONE thing that can
+actually apply a different CSP correctly. A page with no CSP configured, or
+navigating between two pages sharing the exact same resolved policy (the
+overwhelming common case — only the nonce differs, and that's normalized
+away), is completely unaffected: no extra round-trip, no behavior change.
+
+This needs no configuration and no opt-in — it's automatic for every app.
+`data-orbit-hard` on a specific link is no longer a required workaround for
+this (it still exists for other reasons); a per-page CSP difference is now
+detected and handled generally, for every link, not just ones an author
+remembered to annotate.
 
 ## `renderToResponse` and `useRequestCache`
 

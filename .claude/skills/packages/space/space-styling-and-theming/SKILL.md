@@ -87,6 +87,47 @@ All three render under the same cascade, in the same order — **global →
 page → comet** — ordinary CSS specificity applies on top (a heavier
 selector earlier still wins).
 
+**A Comet importing an npm PACKAGE's own plain `.css` (not a local
+`*.module.css`/relative import) crashed `zanix space dev` in one real,
+reproduced case (2026-09-02, `graphiql`'s own `graphiql.css`, imported as
+`import 'graphiql/graphiql.css'` directly in a Comet) — but the root cause is
+almost certainly a `deno-workspace-link-pitfalls`-class LINKING artifact,
+NOT a general `@zanix/space` bug.** First filed as a suspected `dev-engine.ts`
+gap (a plausible-looking but wrong read of `environments.ssr.resolve.
+noExternal: true` combined with the "Comet-local CSS import" special-casing
+those code comments scope to `import './x.css'`) — then DISPROVEN by a real
+repro against a normal, non-linked project (`nodeModulesDir: auto`, a real
+`deno install`, `createSpaceDevEngine`, the same harness `dev-engine.test.ts`'s
+own "noExternal regression" test uses): `ssrLoadModule`, a real Comet's
+`transformClientAsset`, and the raw `?direct` CSS transform ALL correctly
+handled the exact same `graphiql@5.4.0` package and import. `@zanix/space`
+has no CSS/JS misclassification bug here.
+
+**The real, near-certain cause**: this was reproduced specifically while
+running `zanix space dev` via a LOCAL `cli` checkout (`deno run -A
+../cli/mod.ts space dev`), with `@zanix/space` ALSO TEMP-linked — and the
+resolved path for `graphiql/graphiql.css` landed under the CLI checkout's
+OWN `node_modules`, not the served project's. This matches
+`deno-workspace-link-pitfalls`'s own documented footgun class exactly:
+running `zanix space dev` from `cli`'s own entrypoint can resolve the
+served project's module graph (npm deps included) against `cli`'s own
+config instead of the project's. See that skill for the mechanism — this
+entry stays here only as a pointer, since the actual bug (if any) lives in
+that linking behavior, not in CSS/JS classification.
+
+**The workaround that fixed it either way, still worth knowing regardless
+of root cause**: don't import the package's CSS as a module specifier at
+all — vendor a real, on-disk local copy of it (e.g. `curl` the file from
+the package's own CDN-hosted copy at the exact pinned version into the
+project, with a header noting the source/version/update command) and link
+it via a page's own `static styles` field instead (see below) — a plain
+local file goes through this app's own normal `cssPlugin` pipeline exactly
+like `theme/tokens.css`, immune to whatever the consuming project's own
+link/resolution setup does. `static styles` itself requires a genuinely
+on-disk file — its own resolution (`discover-pages.ts`) calls
+`Deno.realPath()` on the resolved path, which throws outright for a remote
+URL, so an external CDN `<link>` isn't a working alternative either.
+
 **What `media` does and doesn't do**: a non-matching `media` query still
 downloads (the browser needs its CSSOM ready in case a resize/rotation
 makes it match later) but doesn't block rendering and fetches at lower
