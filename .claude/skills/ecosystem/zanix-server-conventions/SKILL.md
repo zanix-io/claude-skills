@@ -271,6 +271,52 @@ uses (e.g. `@zanix/datamaster`'s `registerModel(...)`), including per-repository
 seeders (`seeders/main.ts` + environment-specific
 `seeders.dev.ts`/`seeders.prod.ts`).
 
+### Sharing a Provider between REST and Space pages (`space-server`)
+
+A `space-server` project that deliberately binds a Space page's own Interactor
+to the SAME Provider/Repository class its REST API already registers (real,
+tested business logic reused instead of duplicated — as opposed to a
+Space-only Interactor that calls the REST API over HTTP instead) hits a real,
+confirmed module-identity crash unless the shared class opts into a **custom
+slot**:
+
+```ts
+@Provider('authRepository') // <- a plain string, not one of the 5 core slots
+export class AuthRepository extends ZanixProvider {
+  /* ... */
+}
+```
+
+**Why this is needed, mechanically**: the native `zanix space dev`/production
+process loads a project-local Provider class directly, once. But a Space page
+reached through `@zanix/space`'s Vite-backed SSR pipeline (`zanix space dev`
+only — see `space-routing-and-rendering`'s own note) RE-EVALUATES that same
+source file as a SECOND, independent class object — same source, same name,
+different reference. `NATIVE_RUNTIME_MODULES` (`@zanix/space`) fixes this
+exact problem for `@zanix/*` PACKAGES (`@zanix/auth`, `@zanix/datamaster`,
+...), but structurally cannot reach a project's OWN class at all. Without a
+shared `slot`, `this.providers.get(AuthRepository)` called from the
+SSR-side evaluation can never find what the native evaluation registered:
+`[BaseInstancesContainer]: Target is not a constructor` — `INVALID_INSTANCE`,
+a real, reported production failure (a real POST to a Space login page's own
+`action`, calling into a shared `AuthService`/`AuthRepository`).
+
+A `slot` (core or custom) makes `this.providers.get(TheClass)` and
+`this.providers.get('theSlot')` resolve the IDENTICAL cached singleton
+regardless of which evaluation's class reference asks — no call site needs to
+change, only the `@Provider(...)` decorator itself. Confirmed (a real
+constructor-call counter, both resolution orders) to share exactly one
+constructed instance, never two independently-live ones — safe for a typical
+stateless-ish Provider/Repository (state in an external DB/cache, not
+class-level static fields). **Requires `@zanix/server >= 4.2.1`** — a custom
+`slot` string was silently a no-op before that (resolved purely by class
+reference, the same as omitting `slot` entirely).
+
+Only needed for a Provider/Repository a Space page's own Interactor reaches
+directly by class reference. A REST-only provider, or one only ever looked up
+by its already-core-slotted class (`this.database`, `this.cache`, ...), never
+crosses this boundary and needs no custom `slot` at all.
+
 ### External-service connectors: `RestClient`/`GraphQLClient`, never raw `fetch`
 
 The generic (non-database) sibling of the pattern above: a `Connector`
@@ -342,6 +388,10 @@ When reviewing a PR (or writing new code) in a Zanix backend service, check for:
       external HTTP/GraphQL API instead of a `Connector` extending
       `RestClient`/`GraphQLClient` (`zanix generate connector`)? See
       "External-service connectors" above.
+- [ ] In a `space-server` project: does a Space page's own Interactor reach a
+      Provider/Repository ALSO registered by the REST API, by class reference,
+      with no custom `slot`? See "Sharing a Provider between REST and Space
+      pages" above — a real crash, not a style nit.
 - [ ] For new/changed handlers, interactors, providers, or jobs: does the change
       pass the `feature-completeness-conventions` gate (tests covering the
       new/changed behavior, docs/JSDoc updated if stale, no lingering assertion

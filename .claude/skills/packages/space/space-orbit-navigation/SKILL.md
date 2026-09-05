@@ -1,6 +1,6 @@
 ---
 name: space-orbit-navigation
-description: Client-side navigation ("Orbit") — initOrbit's prefetch config, how a navigation fragment carries and dedupes the destination page's CSS (avoiding FOUC), how a fragment whose own resolved CSP differs from the active document's automatically falls back to a real navigation instead of applying under the wrong policy, renderToResponse/useRequestCache, readInitialState, the initialState serialization contract (and its real footguns with Date/Map/Set/circular refs), and the graceful-degradation guarantee. Use when configuring prefetch, passing data through initialState, debugging a flash of unstyled content on navigation, debugging a CSP violation that only reproduces via an in-app link click, or debugging an Orbit navigation.
+description: Client-side navigation ("Orbit") — initOrbit's prefetch config, how a navigation fragment carries and dedupes the destination page's CSS (avoiding FOUC), how a fragment whose own resolved CSP differs from the active document's automatically falls back to a real navigation instead of applying under the wrong policy, getActiveCspNonce() for a Comet generating its own nonce'd content client-side, swapOutlet's own overlapping-navigation serialization, renderToResponse/useRequestCache, readInitialState, the initialState serialization contract (and its real footguns with Date/Map/Set/circular refs), and the graceful-degradation guarantee. Use when configuring prefetch, passing data through initialState, debugging a flash of unstyled content on navigation, debugging a CSP violation that only reproduces via an in-app link click, or debugging an Orbit navigation.
 ---
 
 Orbit swaps a page's outlet fragment client-side instead of a full navigation
@@ -66,6 +66,48 @@ Orbit's own client runtime to always request the right variant.
 routes yet — navigating `/products/1` → `/products/2` re-renders everything
 under the root layout, not just the leaf.
 
+**Current limitation**: `swapOutlet`'s `document.startViewTransition(swap)`
+is the only View Transitions reference in this package, with no per-element
+`view-transition-name` anywhere — so a `persist`-tagged Comet (its state
+genuinely survives the swap, see `space-comets`) still gets visually
+crossfaded as part of the whole outlet's default transition, indistinguishable
+from a torn-down-and-recreated element. See `space-comets`'s own `persist`
+section for the full detail; this note exists so a session investigating the
+swap mechanism itself finds it here too, not only via `persist`.
+
+**Real, confirmed, and mostly benign: `startViewTransition`'s `.ready`
+promise rejecting is expected, not a failure signal.** Confirmed via live
+instrumentation (wrapping `document.startViewTransition` to observe its
+returned `ViewTransition`'s own promises): a single, ordinary navigation
+reliably produces `.ready` rejecting with `InvalidStateError: Transition was
+aborted because of invalid state` in the console, while `swap()` itself
+completes and the destination renders correctly — the browser simply
+skipped the visual cross-fade animation, which is unrelated to whether the
+DOM update happened. Don't chase this specific console message as a bug on
+its own.
+
+**Fixed: overlapping `swapOutlet` calls are serialized, closing a real
+"outlet ends up genuinely empty" gap.** Two navigation attempts on the same
+outlet overlapping (e.g. a click that doesn't visibly register followed
+immediately by a second one, before the first's transition has settled)
+used to race their own synchronous DOM mutations against each other,
+confirmed to leave the outlet's ENTIRE fragment content missing, not just a
+scroll-position illusion — nothing tracked an in-flight
+`document.startViewTransition(swap)` before allowing a second one to
+start. `swapOutlet` (`orbit.ts`) now tracks the in-flight swap in a
+module-level `pendingSwap`; a call landing while one is already in flight
+awaits it FIRST, before doing anything else (including its own `fetch`),
+so every navigation still completes, in the order triggered, rather than
+one being silently dropped or corrupting the other's DOM — the trade-off
+is a fast-following second click visibly landing on the first destination
+for a moment before the second's own swap takes over. `pendingSwap` stays
+`null` (not an always-resolved `Promise`) in the common, non-overlapping
+case specifically so this adds no extra microtask tick there — a
+`.then()` against an already-resolved promise still schedules one, which
+would desync every fire-and-forget caller's own timing (`onClick`/
+`onPopState` never await `swapOutlet`) for every navigation, not just an
+overlapping one.
+
 ## CSS during navigation
 
 A fragment response carries every stylesheet the destination page needs
@@ -130,6 +172,45 @@ This needs no configuration and no opt-in — it's automatic for every app.
 this (it still exists for other reasons); a per-page CSP difference is now
 detected and handled generally, for every link, not just ones an author
 remembered to annotate.
+
+**A Comet that bakes its own `cspNonce` prop into freshly-generated
+client-side content needs `getActiveCspNonce()` instead, never the prop
+itself.** The comparison above deliberately normalizes the nonce OUT of the
+check (`'nonce-<value>'` → `'nonce-*'`), which is correct for its own job
+(two pages sharing the same CSP *shape* shouldn't hard-navigate just
+because their nonces differ) — but it means the comparison has no
+visibility into, and can't protect, a Comet that takes its
+`PageContext.cspNonce` prop (the documented `space-middleware-and-security`
+pattern) and uses it to build NEW nonce'd markup at hydration time (e.g. a
+generated `<style nonce={nonce}>` inserted into a sandboxed iframe's
+`srcDoc`). That prop reflects the fragment's OWN, separately-minted nonce —
+never what the still-active top document (Orbit only swaps the outlet,
+never the whole document) is actually enforcing; baking it into new inline
+content works by accident on a hard reload (same response mints both
+values) and produces a real, reproducible CSP violation on every
+Orbit-navigated visit otherwise. A Comet that just forwards `nonce`
+straight through to something like `@zanix/space-ui`'s Modal/Drawer (which
+render their own `<style nonce>` once, at that component's first mount)
+isn't affected the same way — the risk is specific to a Comet generating
+brand-new nonce'd content on ITS OWN, from a prop.
+
+```ts
+import { getActiveCspNonce } from '@zanix/space/client'
+
+const nonce = getActiveCspNonce() // the ACTIVE document's own nonce, right now — or undefined
+```
+
+`getActiveCspNonce()` (`active-nonce.ts`) reads the nonce a real, parsed
+element on the page already carries — the `.nonce` IDL property, never
+`getAttribute('nonce')` (a real browser hides a nonce's own content
+attribute from `getAttribute`/`outerHTML` once inserted, for security, but
+the IDL property still returns the real value for a PARSER-inserted
+element) — always accurate regardless of how the current document was
+reached. `undefined` on a page with no nonce-based CSP configured at all.
+Same technique `comet-persist-transition.ts` already used internally for
+the identical problem (giving its own dynamically-created `<style>`
+element the currently-enforced nonce), now extracted into this one shared
+helper instead of two separate hand-rolled copies.
 
 ## `renderToResponse` and `useRequestCache`
 

@@ -136,3 +136,8 @@ template list" is the same question either way.
 - [ ] If adding a new Discovery-guarded endpoint tied to templates, does it
       reuse `createTemplatesDiscoveryGuard()` rather than a re-inlined
       equivalent guard?
+- [ ] If a `sync` call reports `resynced: 0` for a record you expected to
+      update, is that actually because `hbs` itself didn't change (a
+      derived-field-only change never resyncs, see the two gaps above) or
+      because the record has no `lastSyncedHbs` at all — not assumed to mean
+      "already up to date"?

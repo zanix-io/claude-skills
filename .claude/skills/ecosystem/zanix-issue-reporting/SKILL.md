@@ -154,12 +154,16 @@ guessing:
      --label <label> [--label <label> ...]
    ```
 3. **Neither exists** — don't invent a command that will just fail. Tell
-   the caller the CLI needs to be installed first, with the real install
-   command (`cli`'s own README "Installation" section has the full set of
-   options, including shell/PowerShell installer scripts):
+   the caller the CLI needs to be installed first, with the ONE real install
+   command (`cli`'s own README "Installation" section — a plain `deno
+   install -g` is NOT a supported alternative, see
+   `cli-global-install-mechanics` for exactly why it silently breaks):
    ```
-   deno install -A -g -n zanix jsr:@zanix/cli@<version>
+   deno run -A jsr:@zanix/cli@<version>/setup <version>
    ```
+   Installing a version published within the last 24h fails on Deno's own
+   freshness window unless `--minimum-dependency-age 0` is added right
+   after `-A` — only when that's actually the case, never speculatively.
    Then retry once it's confirmed installed — don't silently skip
    reporting just because step 1/2 didn't resolve.
 

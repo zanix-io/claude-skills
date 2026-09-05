@@ -195,9 +195,12 @@ frontmatter, as "review/config work against fixed mechanics."
 | [`auth-permissions-and-rate-limiting`](.claude/skills/packages/auth/auth-permissions-and-rate-limiting/SKILL.md) | Consumer — named out of `auth-builder`'s scope |
 | [`auth-service-credential`](.claude/skills/packages/auth/auth-service-credential/SKILL.md) | Consumer — named out of `auth-builder`'s scope |
 
-**`packages/cli/`** (5 skills) — all **Maintainer**; `cli-generator-expert`'s
-entire job is these five topics (command wiring, generators, scaffold
-assembly, dependency compatibility, generator testing).
+**`packages/cli/`** (6 skills) — all **Maintainer**. `cli-generator-expert`'s
+own job is five of these six (command wiring, generators, scaffold
+assembly, dependency compatibility, generator testing) —
+`cli-global-install-mechanics` covers a genuinely separate concern
+(`deno install -g`'s own shim/lockfile mechanics and `setup.ts`) that no
+existing agent owns yet.
 
 | Skill |
 | --- |
@@ -205,6 +208,7 @@ assembly, dependency compatibility, generator testing).
 | [`cli-command-architecture`](.claude/skills/packages/cli/cli-command-architecture/SKILL.md) |
 | [`cli-dependency-compatibility`](.claude/skills/packages/cli/cli-dependency-compatibility/SKILL.md) |
 | [`cli-generator-testing`](.claude/skills/packages/cli/cli-generator-testing/SKILL.md) |
+| [`cli-global-install-mechanics`](.claude/skills/packages/cli/cli-global-install-mechanics/SKILL.md) |
 | [`cli-scaffold-assembly`](.claude/skills/packages/cli/cli-scaffold-assembly/SKILL.md) |
 
 **`packages/core/`** (3 skills) — **Consumer**, all of them, same reasoning

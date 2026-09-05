@@ -254,6 +254,55 @@ author never calls `loadRoutes()` directly) and runs `onStart`.
 `bootstrapServers({ ssr: { application } })`'s `application` must match the
 app's own `name`; `@zanix/space` never assumes a default Application.
 
+**`zanix space dev` only** (never production, never `zanix space build`): a
+page's `@Page({ Interactor })` reached through `@zanix/space`'s Vite-backed
+SSR pipeline re-evaluates that Interactor's own module graph as a SECOND,
+independent evaluation — separate from whatever the native process already
+loaded directly at boot. A Provider/Repository the Interactor reaches by
+class reference, that's ALSO registered by this same project's own REST API
+(a `space-server` project sharing real business logic between both, not a
+Space-only Interactor calling out over HTTP), needs a custom `slot` to avoid
+a real `[BaseInstancesContainer]: Target is not a constructor` crash — see
+`zanix-server-conventions`'s "Sharing a Provider between REST and Space
+pages" section for the full mechanism and the fix.
+
+## Action-only pages: consider a plain REST `@Controller` instead
+
+A `@Page()` route always pays for the full Space request pipeline —
+`langPreHandler`/`langGuard`/`populationGuard` (every page lives under the
+`/[lang]/...` prefix these apply to), CSP nonce generation, security
+headers, CSRF token issuance on `GET` — even when `static redirect` fires
+before `loader`/`component` ever run and nothing is actually rendered (a
+`totp/confirm`-shaped page: reached only via a sibling page's cross-page
+form POST, whose own `GET` just bounces an already-authenticated visitor
+home, and whose `component` exists purely to satisfy
+`SpacePageController.component`'s own `abstract` contract — see
+`SpacePageController`'s own doc for why that field can never be omitted,
+only made trivial).
+
+A plain `@zanix/server` REST `@Controller` skips all of that, paying only
+for whatever guards it explicitly declares. This is a real option even for
+a session-gated, form-submitted, redirect-returning flow, not just JSON
+APIs:
+
+- A REST handler CAN return a raw redirect `Response` unwrapped —
+  `@zanix/server`'s own `getResponseInterceptor` passes `instanceof
+  Response` straight through rather than JSON-wrapping it; this isn't
+  Space-specific machinery.
+- `pageSessionGuard`/`csrfGuard` are plain `@Guard()`-compatible functions
+  (`@zanix/auth`/`@zanix/space` respectively) — nothing ties either to
+  `@Page()` specifically; both apply the identical way on a REST
+  `@Controller` method.
+
+**When this is actually worth it**: a genuinely high-frequency, action-only
+route, where the Space pipeline's per-request overhead is a real cost
+worth avoiding. **When it isn't**: a low-frequency action a session hits
+once per enrollment or occasionally per logout — the overhead is real but
+negligible in absolute terms, and refactoring an already-shipped,
+already-verified `@Page()` into a REST `@Controller` purely for this
+reason is not worth the churn. Decide per-route, not as a blanket
+preference either way.
+
 ## Testing pages
 
 ```ts
@@ -298,3 +347,14 @@ Always the `@zanix/space/testing` subpath, never the package root.
 - [ ] Does a new page's test use `mockPageContext` (unit) or
       `renderPageForTest` (functional) as appropriate, from
       `@zanix/space/testing` — not a hand-rolled context object?
+- [ ] In a `space-server` project: does the page's own `Interactor` reach a
+      Provider/Repository ALSO registered by this project's REST API, by
+      class reference, with no custom `slot`? See "Activation" above and
+      `zanix-server-conventions` — a real `zanix space dev` crash, not a
+      style nit.
+- [ ] Is a new route action-only (no real `component`, `redirect`/`action`
+      is the whole point)? On a genuinely high-frequency path, weigh a
+      plain REST `@Controller` (see "Action-only pages" above) instead of
+      defaulting to `@Page()` out of habit — not worth the churn on an
+      already-shipped low-frequency route, but worth deciding deliberately
+      for a new one.

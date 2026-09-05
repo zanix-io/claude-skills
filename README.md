@@ -65,6 +65,7 @@ scope this genuinely applies to?_
 | `cli-scaffold-assembly`        | Adding a new project type/preset to `zanix new` — the Recipe/Assembler abstraction and the generator-vs-JSR-fetch ownership boundary. |
 | `cli-dependency-compatibility` | Keeping generated code compiling against real, currently-published `@zanix/*` versions — pinned versions, Drift Watch, `--verify`.    |
 | `cli-generator-testing`        | The three-tier test suite for generators, and how it complements Drift Watch/`--verify`.                                              |
+| `cli-global-install-mechanics` | Why a real `deno install -g @zanix/cli` rejects a dependency the package's own `deno.jsonc` should permit — the synthetic shim config and lockfile gaps `setup.ts` fixes. |
 
 **`packages/server/`**
 
@@ -120,7 +121,7 @@ scope this genuinely applies to?_
 | Skill                           | Use it for                                                                                                                              |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `space-routing-and-rendering`   | File-based routing, layouts/loading/error segments, the document shell/contract, the not-found page, and `@zanix/space/testing`.        |
-| `space-comets`                  | Selective hydration — `'use comet'`, `defineComet`, hydration timing, `persist`, `'server-only'` enforcement.                           |
+| `space-comets`                  | Selective hydration — `'use comet'`, `defineComet`, hydration timing, `persist`, `'server-only'` enforcement, plus the ready-made Comet catalog (`FormDraftPersistence`, `SubmitGuard`, `ScrollRestoration`, `UnsavedChangesGuard`, `NetworkStatus`, `ManagedForm`). |
 | `space-orbit-navigation`        | Client-side navigation — `initOrbit`, prefetch config, `renderToResponse`/`useRequestCache`, the `initialState` serialization contract. |
 | `space-middleware-and-security` | Zero-config CSP/security headers, `defineMiddleware`/`cspGuard`/`securityHeadersGuard`, and `csrfGuard`.                                |
 | `space-i18n-and-population`     | `langPreHandler`/`langGuard`, `populationGuard`, and `loadMessages` — which content variant a request gets.                             |

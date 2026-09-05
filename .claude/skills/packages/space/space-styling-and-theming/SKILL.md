@@ -87,6 +87,12 @@ All three render under the same cascade, in the same order — **global →
 page → comet** — ordinary CSS specificity applies on top (a heavier
 selector earlier still wins).
 
+**Dev-only flash on a Comet's own `*.module.css`**: unlike global/page CSS
+(always a real `<link>`, dev included — see `?direct` above), a Comet's
+own module CSS only gets its rules injected once the Comet's client chunk
+executes, always after first paint in dev — see `space-comets`'s own "Vite
+setup" section for the full mechanism and why production is unaffected.
+
 **A Comet importing an npm PACKAGE's own plain `.css` (not a local
 `*.module.css`/relative import) crashed `zanix space dev` in one real,
 reproduced case (2026-09-02, `graphiql`'s own `graphiql.css`, imported as

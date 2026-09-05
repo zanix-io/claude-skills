@@ -59,7 +59,12 @@ inside that scaffold, and for the artifacts the CLI doesn't cover at all.
   actually local (seen directly: `znx generate --help` failed outright,
   `getZanixPaths` not exported by the locally-checked-out `@zanix/utils`
   the published `@zanix/cli` build expected) — but that risk only applies
-  when the local checkout genuinely exists to drift from.
+  when the local checkout genuinely exists to drift from. A DIFFERENT
+  failure shape — a global install itself rejecting a dependency, or a
+  Deno-native "Cannot find module...verify main entry" error several
+  `npm:` hops into a served project's own graph — is `cli-global-install-
+  mechanics`'s territory, not this drift risk; check there before assuming
+  either is a `cli` bug.
 - **How to point EITHER invocation form at a target project in a
   DIFFERENT directory than wherever the CLI itself lives — this trips up
   every command differently, confirmed empirically across

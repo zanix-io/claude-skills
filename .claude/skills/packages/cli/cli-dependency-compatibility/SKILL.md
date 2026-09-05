@@ -1,6 +1,6 @@
 ---
 name: cli-dependency-compatibility
-description: How @zanix/cli keeps generated code compiling against real, currently-published @zanix/* package versions — the pinned-version source of truth, the scheduled Drift Watch CI check, and the opt-in --verify flag. Use when adding a new @zanix/* import to a generator/template, or investigating a --verify/Drift Watch failure.
+description: How @zanix/cli keeps generated code compiling against real, currently-published @zanix/* package versions — the pinned-version source of truth, the scheduled Drift Watch CI check, and the opt-in --verify flag — plus a separate concern, cli's own deno.jsonc native-runtime-module declarations that zanix space dev's SSR pipeline needs to resolve a @zanix/space NATIVE_RUNTIME_MODULES specifier at all. Use when adding a new @zanix/* import to a generator/template, investigating a --verify/Drift Watch failure, or adding a package to @zanix/space's own NATIVE_RUNTIME_MODULES.
 ---
 
 This skill covers a problem specific to a code generator: `cli`'s generators
@@ -152,6 +152,64 @@ discovery resolves from the *calling process's* cwd, not from the paths of the
 files being checked — omitting an explicit `cwd: root` on the `Deno.Command`
 silently checks the generated project against `cli`'s own `deno.jsonc` instead
 of the generated project's, giving a false pass/fail entirely.
+
+## A separate concern: cli's own `deno.jsonc` — native-runtime-module declarations (`zanix space dev`)
+
+Everything above is about what a **generated project** imports. This section
+is about a completely different thing: what `cli`'s **own running process**
+needs to resolve, for itself, while `zanix space dev` is up.
+
+`@zanix/space`'s own `nativeRuntimeModulesPlugin`
+(`native-runtime-modules.ts`, its internal `NATIVE_RUNTIME_MODULES` array)
+routes a fixed list of bare specifiers — `@zanix/space`, `@zanix/server`,
+`@zanix/auth`, `@zanix/datamaster`, `@zanix/asyncmq`, `@zanix/notifications`,
+plus `react`/`react-dom`/`preact`/`preact/hooks` — through
+`RealImportEvaluator.runExternalModule` (`ssr-module-evaluator.ts`), which does
+a **plain native `import(specifier)`**, deliberately never resolved against
+the scaffolded project's own `deno.json` — the whole point is that this must
+share real reference identity with whatever `cli`'s own process already
+loaded (see that file's own doc for the module-identity bug this closes: two
+separately-evaluated copies of the same package silently split shared
+registries/DI containers).
+
+That `import()` runs inside the process `zanix space dev` itself started, so
+it resolves against **`cli`'s own governing `deno.jsonc`** (see
+`import-project-module.ts`'s own module doc for why one `deno run <entry>`
+invocation shares one governing resolver, rooted at the entry's own config —
+never per-file). If a package on `@zanix/space`'s list has no entry in `cli`'s
+own `deno.jsonc` `imports`, that native `import()` fails outright with `Import
+"<pkg>" not a dependency and not in import map` — a real, reported crash
+(confirmed against `@zanix/notifications`/`@zanix/datamaster` on published
+`@zanix/space@1.1.0`/`1.2.0`, fixed by adding both to `deno.jsonc`, mirroring
+the entry `@zanix/auth` already had).
+
+**This is not the same fix as `ZANIX_DEPENDENCY_VERSIONS`/
+`PROJECT_TYPE_DEPENDENCIES` above.** Those govern a *generated* project's own
+`deno.json` — a separate file, a separate resolver, a separate process
+entirely. `cli` itself never imports most of these packages directly; the
+`deno.jsonc` entry exists purely so this one native `import()` has something
+to resolve against, the same reason `preact`/`react`/`@zanix/auth` already
+carry one (each entry documents this at its own site — read `@zanix/auth`'s
+for the fullest version of this reasoning).
+
+**Checklist — whenever `@zanix/space`'s own `NATIVE_RUNTIME_MODULES` gains a
+new package** (or when investigating a `"not a dependency and not in import
+map"` crash reported against `zanix space dev`):
+
+- [ ] Is the new package declared in `cli`'s own `deno.jsonc` `imports`, with
+      a comment explaining why (the native-runtime-module identity reason,
+      not a generator-template reason)?
+- [ ] Does `src/@tests/integration/commands/space/dev/
+      native-runtime-module-imports.test.ts` list it? That test does a real
+      dynamic `import()` of every `@zanix/*` package on this list against
+      `cli`'s own config — the regression guard for this exact gap.
+      `@zanix/space` now exports `NATIVE_RUNTIME_MODULES` itself (`./dev`,
+      added specifically to close this hand-sync gap) — once `cli`'s own
+      `@zanix/space` range picks up the version that first ships it, switch
+      this test to import the REAL list (filtered to `@zanix/*` entries)
+      instead of a hardcoded copy (see that test file's own TODO). Until
+      then, the hardcoded list must still be kept in sync BY HAND.
+- [ ] Was `deno.lock` regenerated (`deno install`) after editing `imports`?
 
 ## Checklist before adding a new `@zanix/*` import to any generator/template
 
