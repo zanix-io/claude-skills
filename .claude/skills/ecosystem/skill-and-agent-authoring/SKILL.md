@@ -177,7 +177,12 @@ both paths, don't assume the first one succeeding means the second did too.
    rest pointing at it. The tell is writing more than "see `X`" for
    something `X` already explains in full — if you're about to justify a
    rule, not just state it, check whether the justification already has a
-   home first.
+   home first. **This is the same discipline `documentation-voice` requires
+   of a shipped code comment/JSDoc, not a skill-authoring-only concern** —
+   this file's own dense, citation-heavy prose is guidance for a future
+   authoring session, never a style to carry into actual source: a code
+   comment stating "same reasoning as `X` above" must actually stop there,
+   not restate `X`'s reasoning too.
 4. **Match house style**: read 1-2 sibling skills in the target tier first.
    Golden Rule section → numbered rules or topic sections → resolved edge
    cases inline (don't leave a genuine ambiguity unresolved if the audit

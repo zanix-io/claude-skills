@@ -44,6 +44,34 @@ mechanism itself is not.
   validator needs inventing from scratch anywhere else in the ecosystem.
 - Report once, at the end — what was added, which file(s), one line per
   caution checked against.
+- **A new helper lands in `modules/helpers/mod.ts`'s barrel — the one
+  subpath a real `@zanix/space`/`@zanix/space-ui` Comet actually imports
+  directly (every other public subpath stays server/tooling-only) — so a
+  helper that imports something a browser bundler can't resolve breaks
+  EVERY Comet that imports any single helper from that barrel, not just
+  the one that needed it.** Confirmed real, twice, from exactly this
+  workflow: `cron.ts`'s `node:timers` import (Vite externalizes it instead
+  of failing the build, then throws at runtime the first time the code
+  actually yields — fixed in 4.3.0 by switching to `setTimeout`), and
+  `cron.ts`/`masking/hard.ts` importing the full `modules/logger/mod.ts`
+  for a couple of log calls — `mod.ts`'s own top-level
+  `registerFileSaveFactory` side effect drags in `WorkerManager`
+  (`modules/workers/mod.ts`), which Vite's worker plugin can't resolve at
+  all (`[UNRESOLVED_ENTRY]`) — fixed in 4.3.1 via `modules/logger/
+  internal.ts` (see step 3 below). A related but distinct RUNTIME-only
+  shape (no build failure, only a crash if a browser/Comet actually CALLS
+  the function) also confirmed real, in 4.4.0: a bare, unguarded `Deno.*`
+  reference (`Deno.cwd()`, `Deno.env.get`, `Deno.readTextFileSync`, ...)
+  throws a bare `ReferenceError: Deno is not defined` outside a real Deno
+  runtime — guard any new helper like this with `assertDenoRuntime`
+  (`utils/runtime.ts`) as its first line, don't invent a new pattern. See
+  `utils-cron-logger-workerchain-comet-gap.md`'s own root-cause trace for
+  the full build-time mechanism. Before reporting a new helper done, run
+  `deno test --allow-all src/@tests/integration/public-exports-worker-free-module-graph.test.ts`
+  — it already asserts every published subpath stays free of `WorkerManager`/
+  the full logger barrel, and will catch a new helper reintroducing either
+  (it does NOT cover the `Deno.*`-global case — that one's still a manual
+  check, per step 3 below).
 
 ## Skills to load
 
@@ -116,8 +144,58 @@ mechanism itself is not.
 2. Add the export to `modules/helpers/mod.ts`'s barrel (the file every
    other helper is re-exported through) — confirm the exact re-export line
    format from a real neighboring entry, don't guess it.
-3. Unit test at the mirrored `@tests/unit/utils/` path.
-4. JSDoc complete enough to pass `deno doc --lint` — this package publishes
+3. **Check every real Deno/Node reference the new helper actually added —
+   both its own imports AND any bare `Deno.*`/`node:*` global it touches
+   directly — not just its own file's direct ones.** A barrel re-export is
+   a graph edge regardless of what a downstream consumer names, so a
+   transitive import two files deep counts the same as a direct one, and
+   `@zanix/utils/helpers` is the one subpath a real `@zanix/space`/
+   `@zanix/space-ui` Comet actually imports directly (every other public
+   subpath stays server/tooling-only) — so a "pure Deno/Node" reference
+   dragged in here reaches every Comet that imports even one unrelated
+   helper from the same barrel. Three real categories, two different
+   FAILURE SHAPES:
+   - **Build-time (a real import a bundler must resolve) — confirmed fatal
+     twice already**: a `node:*` builtin (Vite externalizes it silently
+     instead of failing the build, then throws at runtime the first time
+     it's actually reached — `cron.ts`'s `node:timers`, fixed in 4.3.0),
+     and anything reaching `modules/workers/mod.ts` (`WorkerManager`) — a
+     bundler can't resolve its real `new Worker(new URL(...))` call at all
+     (`cron.ts`/`masking/hard.ts` importing the full `modules/logger/
+     mod.ts` for a couple of log calls, fixed in 4.3.1). **If the new
+     helper needs to log anything, import `modules/logger/internal.ts`,
+     never `modules/logger/mod.ts`** — the latter's own top-level
+     `registerFileSaveFactory` side effect is exactly what drags
+     `WorkerManager` in for every barrel consumer. Confirm with
+     `deno info --json src/modules/helpers/mod.ts` (or just run
+     `public-exports-worker-free-module-graph.test.ts`, which does this
+     same check for every published subpath already). Separately: this
+     barrel already carries an open, unconfirmed-but-plausible version of
+     this same risk via `@std/path`/`@std/crypto` (used by the existing
+     path/file/config/encryption helpers) — don't add a NEW `@std/*`/
+     `npm:*` import to a helper without flagging it the same way, even
+     though the existing ones predate this check.
+   - **Runtime-only (a bare global reference, nothing to resolve at build
+     time — only fails if a browser/Comet actually CALLS the function)**:
+     a direct, unguarded `Deno.*` reference (`Deno.readTextFileSync`,
+     `Deno.cwd()`, `Deno.env.get`, `Deno.statSync`, ...) throws a bare,
+     unexplained `ReferenceError: Deno is not defined` the first time such
+     a helper is actually invoked outside a real Deno runtime — confirmed
+     real in `getRootDir`/`getTemporaryFolder`/`collectFiles`/`readConfig`/
+     `readModuleConfig`/`saveConfig`/`interpolateEnv`, fixed in 4.4.0. If
+     the new helper touches `Deno.*` directly and has no already-correct
+     guard of its own (`fileExists`/`folderExists`'s existing `catch`
+     already treats a missing `Deno` global the same as any other stat
+     failure — return `false` — so those two were deliberately left alone;
+     `modules/errors/main.ts`'s `typeof Deno !== 'undefined' &&
+     Deno.errors?.Http` and `modules/logger/defaults/formatter.ts`'s
+     `Deno.uid()` in a `try`/`catch` are the other two pre-existing correct
+     patterns), call `assertDenoRuntime('yourFnName')`
+     (`utils/runtime.ts`, exported publicly via this same barrel) as the
+     very first line of the function — never invent a new guard shape,
+     this one already exists and is unit-tested.
+4. Unit test at the mirrored `@tests/unit/utils/` path.
+5. JSDoc complete enough to pass `deno doc --lint` — this package publishes
    to JSR, every exported symbol needs real documentation, not a one-liner.
 
 ## Adding a new validation decorator, concretely
@@ -181,7 +259,16 @@ against a real target file, and against a real multi-violation-per-file
 case for an auto-fix (the duplicate-import bug `utils-linter-plugins`
 documents was only visible with two violations in one file). For a new
 helper, the mirrored `@tests/unit/utils/` test plus the barrel export in
-`modules/helpers/mod.ts` are both required, not just the function itself.
+`modules/helpers/mod.ts` are both required, not just the function itself —
+and so is confirming the new helper introduced no `node:*`/`WorkerManager`
+edge into that barrel (step 3 above; `public-exports-worker-free-module-graph.test.ts`
+still passing is the concrete proof, not a manual read of the new file's
+own imports alone) AND, separately, that any bare `Deno.*` reference the
+new helper touches directly is guarded with `assertDenoRuntime` (or is
+already safe some other confirmed way, like `fileExists`'s own `catch`) —
+that second check has no automated test sweeping every subpath the way
+the first one does, so it stays a manual read of the new file's own
+`Deno.*` call sites specifically.
 For a new validation decorator, the barrel export in
 `modules/validations/mod.ts`, the new catalog row in
 `utils-validator-decorators`, AND the decorator's own entry in

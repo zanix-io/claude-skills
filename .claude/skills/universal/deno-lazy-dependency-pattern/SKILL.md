@@ -486,6 +486,36 @@ content grew into its own responsibility.
 
 ## Known current gaps — real, not yet closed as of this writing
 
+- **`@zanix/space` — two independent leaks from its root `.` entry point, both fixed
+  (2026-09-05).** Confirmed via a real, isolated `deno info --json mod.ts` reproduction (before/
+  after, not assumed) that merely importing `defineSpaceApp` — the single most commonly imported
+  symbol in this package, used by literally every `space.app.ts` — materialized `sharp`, `vite`,
+  `@tailwindcss/vite`, `@vanilla-extract/vite-plugin`, `postcss-modules`, `@deno/vite-plugin`, and
+  their whole transitive `npm:` closure, regardless of whether the triggering config was ever set.
+  Both leaks share the same root shape this skill already documents, just two different flavors of
+  it: **(1) a literal dynamic-import specifier** — `define-space-app.ts`'s `sitemap: 'auto'`
+  dev-mode branch did `await import('@zanix/space/vite')` with a literal string argument, correctly
+  reasoning this should only cost anything in dev at RUNTIME, but a literal specifier is exactly as
+  eagerly resolved by `deno check`/`deno test`/`deno cache` as a static top-level import (this
+  skill's own golden-rule gotcha). Fixed by routing it through a non-literal
+  `import.meta.resolve('../bundler/mod.ts')` constant (`VITE_MODULE_SPECIFIER`), mirroring that
+  same file's own pre-existing `LOG_CONTROLLER_SPECIFIER` precedent — no shim file needed, single
+  consumer, stays inline. **(2) the `import type` precondition** — `socket-exports.ts` (the narrow
+  slice of the dev-tools barrel `.` actually re-exports) re-exported `SsrModuleChangedEvent`'s TYPE
+  directly from `dev-engine.ts`, whose own top-level VALUE imports (`vite`, `@deno/vite-plugin`)
+  resolve the instant that type is referenced — already correctly diagnosed in that file's own doc
+  comment as a known, accepted gap before this fix, not a silent oversight. Fixed via this skill's
+  own "best fix" path for the `import type` precondition: split `SsrModuleChangedEvent` into its
+  own dependency-free `dev-engine-types.ts` file (with `changeType`'s `HotUpdateOptions['type']`
+  reference replaced by a local `'create' | 'update' | 'delete'` literal union, confirmed against
+  `vite@8.2.2`'s own `.d.ts`, to avoid re-introducing the exact same problem one field down), and
+  re-pointing every same-package consumer (`dev-engine.ts` itself, `space-dev-socket.ts`,
+  `socket-exports.ts`) at that new file instead of `dev-engine.ts`. A permanent `deno info --json`-
+  based regression guard (code AND type edges both — the second leak above is exactly the shape a
+  code-only guard would miss) now lives in `space`'s own
+  `src/@tests/unit/runtime/dependency-boundary.test.ts`, asserting zero `npm:` packages reachable
+  from `.` at all — confirmed to actually fail against the pre-fix code for both leaks
+  independently, not just written and assumed correct.
 - **`@zanix/asyncmq`'s two-part fix (narrow `/jobs`-shaped subpath + removing
   `@zanix/datamaster`/`@zanix/database` from its own top-level `imports`) is already built and
   confirmed working (2026-08-25).** `asyncmq/deno.jsonc`'s `exports` now has `./worker`/`./core`/

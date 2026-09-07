@@ -22,12 +22,31 @@ before assuming this summary is still accurate.
 
 ## Setup
 
+Zero-config: the auto-generated client entry already calls this, alongside
+`hydrateComets()`/`hydrateErrorBoundaries()` (`space-comets`), via
+`initClientEntry()`. Only relevant if a project sets
+`SpaceAppConfig.clientEntry` to its own file — `initClientEntry(options)`
+forwards `options` straight to `initOrbit`:
+
+```ts
+import { initClientEntry } from '@zanix/space/client'
+initClientEntry({ prefetch: { onViewport: true } }) // same shape initOrbit itself takes
+```
+
+Need `initOrbit()` on its own (interleaving code between the three calls)? It
+stays independently exported:
+
 ```ts
 import { initOrbit } from '@zanix/space/client'
 initOrbit()
 ```
 
-Call once, alongside `hydrateComets()` (`space-comets`).
+A custom `clientEntry` replaces the default bootstrap outright rather than
+composing with it — omitting `initOrbit()` there silently loses Orbit
+navigation app-wide, with nothing thrown. See `space-comets`'s own
+`clientEntry` section for the full replace-not-compose contract, its
+client-only/never-SSR'd behavior, and a since-fixed `optimizeDeps`
+pre-bundling gap for a package imported only from `clientEntry`.
 
 ## Prefetch configuration
 

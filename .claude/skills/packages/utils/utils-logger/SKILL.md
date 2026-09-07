@@ -146,28 +146,27 @@ for a browser bundler. `createClientLogger` (`@zanix/utils/logger/client`,
 always the given `fetcher`, so importing it never reaches either.
 
 **The mechanism that makes this actually hold, not just by convention**: the
-shared formatting code (`modules/logger/base.ts`) used to have a static,
-unconditional `import * as colors from '@std/fmt/colors'`, and reached
-`@std/path` transitively through `readConfig` — both real leaks into
-`createClientLogger`'s own module graph, fixed in `4.1.0`. Now `base.ts` (and
-`zanix/namespace.ts`'s `setGlobalZnx`, which every `Logger` — the
-browser-safe one included — calls) hold only a module-private variable plus a
-`register*` function (`registerColorFormatter`/`registerConfigNameReader`/
-`registerConfigReader`/`registerFileSaveFactory`), defaulting to an
-identity/throwing stub. The REAL `@std/fmt/colors`/`readConfig`/
-`WorkerManager`-backed implementations are wired in only as an import-time
-side effect of the real server barrels (`modules/logger/mod.ts`,
-`modules/helpers/mod.ts`) — never by `main.ts`/`createClientLogger`'s own
-entrypoint, which never imports either barrel. A Deno-standard-library
-specifier can only ever resolve to a remote `https://jsr.io/...` URL for a
-browser bundler, never a local file — unresolvable regardless of whether the
-import is actually reached at runtime, which is why the fix is a static
-IMPORT never happening in this file at all, not a runtime guard around one
-that still does.
+shared formatting code (`modules/logger/base.ts`) and `zanix/namespace.ts`'s
+`setGlobalZnx` (which every `Logger` — the browser-safe one included —
+calls) hold only a module-private variable plus a `register*` function
+(`registerColorFormatter`/`registerConfigNameReader`/`registerConfigReader`/
+`registerFileSaveFactory`), defaulting to an identity/throwing stub — never a
+static, unconditional `import * as colors from '@std/fmt/colors'`, or a
+transitive reach into `@std/path` through `readConfig`, either of which would
+be a real leak into `createClientLogger`'s own module graph. The REAL
+`@std/fmt/colors`/`readConfig`/`WorkerManager`-backed implementations are
+wired in only as an import-time side effect of the real server barrels
+(`modules/logger/mod.ts`, `modules/helpers/mod.ts`) — never by
+`main.ts`/`createClientLogger`'s own entrypoint, which never imports either
+barrel. A Deno-standard-library specifier can only ever resolve to a remote
+`https://jsr.io/...` URL for a browser bundler, never a local file —
+unresolvable regardless of whether the import is actually reached at
+runtime, which is why the fix is a static IMPORT never happening in this
+file at all, not a runtime guard around one that still does.
 
 This is the same registration-based indirection `registerFileSaveFactory`
-(`main.ts`) already used for `WorkerManager` before `4.1.0`, now applied to
-the two leaks that survived that first pass — and the same "keep the
+(`main.ts`) already uses for `WorkerManager`, applied here to
+`@std/fmt/colors`/`readConfig` too — and the same "keep the
 server-only import out of the client's own module graph" shape
 `@zanix/space`'s `modules/client/client-logger.ts` and `@zanix/space-ui`'s
 `src/shared/client-logger.ts` (Modal/Drawer's shared logger) both build on

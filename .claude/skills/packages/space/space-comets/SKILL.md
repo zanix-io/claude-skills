@@ -1,6 +1,6 @@
 ---
 name: space-comets
-description: Selective hydration — the 'use comet' directive, defineComet, the comet manifest and why it exists, hydration timing (visible/load/only), the persist prop's bounded cache, and the 'server-only' build-time enforcement directive. Also covers the ready-made, headless Comet catalog this package ships (FormDraftPersistence, SubmitGuard, ScrollRestoration, UnsavedChangesGuard, NetworkStatus, ManagedForm) and why none of them render the `<form>`/accept children. Use when building or reviewing a Comet (an islands-architecture hydration boundary), or before hand-rolling a form-draft/scroll-restoration/double-submit/unsaved-changes/online-status behavior a page author might reasonably assume already exists.
+description: Selective hydration — the 'use comet' directive, defineComet, the comet manifest and why it exists, hydration timing (visible/load/only), the persist prop's bounded cache, and the 'server-only' build-time enforcement directive. Also covers the ready-made, headless Comet catalog this package ships (FormDraftPersistence, SubmitGuard, ScrollRestoration, UnsavedChangesGuard, NetworkStatus, ManagedForm) and why none of them render the `<form>`/accept children, plus overriding the default client bootstrap via `defineSpaceApp({ clientEntry })` — its replace-not-compose semantics, why it's client-only/never SSR'd, and a since-fixed optimizeDeps pre-bundling discovery gap for a package imported only from `clientEntry` (surfaced as an opaque "Could not create web worker(s)" failure on an older `@zanix/space`). Use when building or reviewing a Comet (an islands-architecture hydration boundary), before hand-rolling a form-draft/scroll-restoration/double-submit/unsaved-changes/online-status behavior a page author might reasonably assume already exists, or when writing/debugging a custom `clientEntry`.
 ---
 
 Comets are `@zanix/space`'s selective-hydration mechanism (an islands
@@ -132,15 +132,83 @@ import Counter from '../comets/counter.tsx'
 and `'only'` (mounts fresh client-side via `createRoot`, never
 `hydrateRoot`/SSR at all — for browser-only content).
 
-## Client entry: React vs. Preact barrel — pick the one matching the app's renderer
+## `clientEntry`: overriding the default client bootstrap
+
+Zero-config by default — nothing to write. The auto-generated client entry
+already calls `initClientEntry()`, which runs `hydrateComets()`,
+`hydrateErrorBoundaries()`, then `initOrbit()` (`space-orbit-navigation`), in
+one call. Only relevant once a project sets `defineSpaceApp({ clientEntry })`
+to its own file, for app-wide, one-time client setup that doesn't belong to
+any single Comet (a global `self.MonacoEnvironment`, an analytics init, a
+service worker registration):
 
 ```ts
-import { hydrateComets } from '@zanix/space/client' // React barrel
+// space.app.ts
+export default defineSpaceApp({
+  name: 'storefront',
+  clientEntry: './src/main.client.ts', // REPLACES the auto-generated default entirely
+})
+```
+
+**A custom `clientEntry` REPLACES the default outright — it never composes
+with it** (`client-entry.ts`'s `setClientEntry` is a plain last-wins setter,
+not an accumulator; `resolveClientEntrySpecifier()` returns the override
+path or the built-in virtual entry, never both). Your own file must call
+`hydrateComets()`/`hydrateErrorBoundaries()`/`initOrbit()` itself — via
+`initClientEntry()`, or the three calls separately — or the app silently
+loses Comet hydration, error boundaries, and Orbit navigation app-wide, with
+nothing thrown to the console:
+
+```ts
+import { initClientEntry } from '@zanix/space/client' // React barrel
 // or, for renderer: 'preact' apps:
-import { hydrateComets } from '@zanix/space/client/preact'
+import { initClientEntry } from '@zanix/space/client/preact'
+
+initClientEntry()
+// ...then your own extra code
+```
+
+Need the three calls separated (to interleave code between them)? They stay
+independently exported from the same barrel:
+
+```ts
+import { hydrateComets, hydrateErrorBoundaries, initOrbit } from '@zanix/space/client'
 
 hydrateComets()
+hydrateErrorBoundaries()
+initOrbit()
 ```
+
+**Client-only, never SSR'd** — a custom `clientEntry` is loaded only via a
+`<script type=module>` bootstrap tag; Deno's SSR pipeline never imports it
+(`client-entry-plugin.ts`'s own doc). This is what makes Vite-only import
+syntax (`?worker`, `?url`, `?raw`, ...) safe to use inside it specifically —
+the opposite of a Comet file, which genuinely IS a real Deno SSR import on
+every request (see the three requirements above); using such syntax in a
+Comet file would break SSR.
+
+**Fixed gotcha, worth knowing the shape of even now — a package imported ONLY
+from `clientEntry` used to be invisible to dependency pre-bundling.**
+`discoverBareSpecifiersFromEntryFiles` (`deno-optimize-deps-alias.ts`, renamed
+from `discoverBareSpecifiersFromComets`), the mechanism that feeds Vite's
+`optimizeDeps.include`, used to walk ONLY the files `discoverComets` finds by
+scanning for the `'use comet'` directive — a real `clientEntry` override's own
+file was never one of those, so its imports never reached that walk. A
+transitive CommonJS dependency reachable only from `clientEntry` could then
+fail ESM interop at runtime — confirmed via a Monaco Web Worker setup where
+this surfaced as an opaque, detail-free `Could not create web worker(s)`
+console failure with nothing pointing back at a missing `optimizeDeps.include`
+entry. `denoOptimizeDepsAliasPlugin`'s own `configResolved` hook now also
+resolves a real `clientEntry` override (via `resolveClientEntryFilePath`,
+shared with `build-client.ts`'s own `resolvedClientEntry` resolution — never
+the auto-generated default, which has no file to walk and only ever imports
+`@zanix/space/client` itself) and includes it in the walk. **On an older
+pinned `@zanix/space` version without this fix**, the workaround is adding a
+`typeof import('pkg-name')` type-only reference — a pure TS type query, erased
+at both SSR transpile and the client bundle, zero runtime cost — inside a real
+Comet file; the discovery walk's own regex-based scan matches
+`typeof import(...)` the same as a real dynamic `import()` call, which is
+enough to get the bare package name into `optimizeDeps.include`.
 
 **`@zanix/space/client` is the React barrel; a `renderer: 'preact'` app must
 import `@zanix/space/client/preact` instead** — same exports/signatures,
@@ -247,6 +315,20 @@ primitive exported from `@zanix/space/comet` itself:
 Full API/options for each: `docs/comets.md`'s own "Form draft persistence"
 through "Composing form behaviors" sections — not restated here.
 
+**`SubmitGuard` resets on a real bfcache restore, not just component
+unmount** — a submission always ends in a real navigation away from the
+guarded page, but the ORIGIN page can itself come back from the browser's
+back/forward cache (a visitor hitting "back" after that navigation) with its
+disabled controls and in-flight state frozen exactly as `handleSubmit` left
+them — nothing re-runs a React/Preact `useEffect`/its cleanup on a bfcache
+restore, since the whole realm is frozen and thawed rather than torn down and
+remounted. `attachSubmitGuard` also listens for `pageshow` and resets both
+the disabled controls and the in-flight flag on a real restore
+(`event.persisted === true`); a fresh load (`persisted: false`) leaves both
+untouched — without this, hand-rolling the guard yourself would need the same
+`pageshow` handling, or a "back" navigation would leave the submit button
+disabled forever.
+
 **Why none of them render the `<form>`/accept `children`, and neither
 should a new one modeled on them**: a Comet's own props must be plain JSON
 (`defineComet`'s `stringifyForWire` call, `define-comet.ts`). A component
@@ -286,6 +368,13 @@ package.
       it?
 - [ ] Does the client entry import the barrel matching this app's
       `renderer`?
+- [ ] Writing/changing a custom `clientEntry`? Does it still call
+      `hydrateComets()`/`hydrateErrorBoundaries()`/`initOrbit()` (directly or
+      via `initClientEntry()`) — a custom entry replaces the default outright
+      and silently drops all three otherwise. On an older pinned `@zanix/space`
+      without the `optimizeDeps` discovery fix, does it import an npm package
+      no Comet also imports? Add a `typeof import('pkg-name')` reference in a
+      real Comet file so it's discovered for `optimizeDeps` pre-bundling.
 - [ ] If `persist` is used, is the key genuinely stable across navigations
       for the SAME comet — not reused across different comets, and not
       relied on beyond the 5-entry cache?

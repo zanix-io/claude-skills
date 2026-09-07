@@ -47,13 +47,19 @@ hook call" in either renderer) and then applying it for real to `Table`:
   `VisuallyHidden` all use this `render.ts` factory pattern.
 - **Stateful, with a genuinely shareable body**: the SAME `render.ts`-factory
   technique, extended to inject the hooks themselves (`useState`/`useEffect`/
-  `useRef`/`useId`/`useContext`/...) as a second parameter alongside `h`, not
+  `useRef`/`useContext`/...) as a second parameter alongside `h`, not
   just `h` alone. This is sound, not just "looks the same": React's and
   Preact's hooks dispatchers key a hook's state on ITS OWN component
   instance's call order across renders, never on how the function that calls
   it was constructed — a `useState` call reached through `hooks.useState(...)`
   inside a factory-returned closure is call-order-identical, every render, to
-  one written as a bare `useState(...)` in a hand-written function body. Use
+  one written as a bare `useState(...)` in a hand-written function body.
+  **Never the renderer's own bare `useId` for a value that needs to match
+  between server render and client hydration**, though — see
+  `space-ui-builder`'s own step 6 for the full "why" (a Comet's isolated
+  hydration root) and the two correct alternatives (`@zanix/space`'s
+  `useCometStableId`, or a props-derived hash for a component that must stay
+  `@zanix/space`-dependency-free). Use
   this whenever a stateful component's actual body — every hook call, every
   branch, every returned element — is otherwise IDENTICAL between the two
   renderers, and differs only in which module a hook/`h` is imported from and
@@ -143,13 +149,35 @@ Two components need to ARIA-wire an element they don't render themselves —
   `Menu`'s own `toggleWrapperRef` already established), not by holding a
   ref reference across renders.
 
-This is a deliberately small, closed set — **only reach for a render-prop
-when a component genuinely needs to ARIA-wire caller content it doesn't
-render itself.** `Combobox`'s own input is a counter-example: even though it
-looks similar to `Popover`'s trigger problem, the input isn't arbitrary
-caller content (this component owns and renders it directly), so it takes
-no render-prop at all — confirm which shape actually applies before
-defaulting to a render-prop out of habit.
+This is a deliberately small set — **only reach for a render-prop when a
+component genuinely needs to ARIA-wire caller content it doesn't render
+itself.** `Combobox`'s own input is a counter-example: even though it looks
+similar to `Popover`'s trigger problem, the input isn't arbitrary caller
+content (this component owns and renders it directly), so it takes no
+render-prop at all — confirm which shape actually applies before defaulting
+to a render-prop out of habit.
+
+A THIRD, differently-motivated render-prop since exists — **`Menu.visual:
+() => Node`** — worth distinguishing from the two above rather than folding
+in as a third instance of the same reason. `Menu.visual` isn't ARIA-wiring
+anything (it takes no arguments to merge onto the returned element, unlike
+`Field.children`'s `fieldProps` or `Popover`/`Tooltip`'s event-handler
+spread) — it exists to avoid giving `Menu`'s own module a static import of
+`Image`/`ImgButton` (both real, `@zanix/space`-dependent components), since
+a static ES import is unconditionally hoisted regardless of runtime
+branching and would have made every `Menu` instance unusable inside a
+`'use comet'` file even when a given instance never used an image-shaped
+visual at all (see `space-ui-architecture`'s "Export surface" section and
+`components/Menu/index.ts`'s own doc). The caller resolves the visual
+element themselves (server-side, outside any Comet) and hands down the
+already-built result. **The real, generalizable lesson**: a render-prop is
+the right tool whenever a component needs a caller-supplied ELEMENT it
+doesn't fully control the construction of — whether the reason is ARIA-wiring
+(the original two) or avoiding a static dependency the component's own
+module would otherwise carry unconditionally (`Menu.visual`) — not only the
+narrower "ARIA-wire caller content" framing this section originally used
+exclusively. Still don't reach for one without one of these two concrete
+reasons.
 
 ## Real bugs already found and fixed — check before repeating the shape
 
@@ -231,7 +259,9 @@ defaulting to a render-prop out of habit.
       does) reach `@zanix/space` or any other real cross-package runtime
       dependency? See `space-ui-architecture`'s own "Export surface" section
       for the full rule and why it matters — if yes, its exports belong in
-      `./runtime`/`./runtime/preact`, never the root barrel.
+      their OWN new `./runtime/<kebab-name>`/`./runtime/<kebab-name>/preact`
+      subpath, never the root barrel and never an existing component's own
+      `./runtime/*` file or any shared combined barrel.
 - [ ] Does this component log anything? See `space-ui-architecture`'s "A
       second cross-package hazard" section — `shared/client-logger.ts`,
       never `@zanix/utils/logger` directly.

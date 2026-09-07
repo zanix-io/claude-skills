@@ -62,12 +62,20 @@ reimplemented rule, which this follows exactly.
 
 **Two tags with no target in this package**: `page`/`lc` (page-level
 composition is `@zanix/space`'s job, per `space-ui-architecture`'s ownership
-map — out of scope here regardless of any future component) and `menu` (no
-renderer-agnostic `render.ts` factory exists for `Menu` — it needs real
-per-renderer hooks — and no consumer evidence has asked for it inside rich
-text specifically). Don't assume adding one of these tags is a small
-addition; both are structurally out of scope or blocked on a real
-architectural gap, not a missing implementation detail.
+map — out of scope here regardless of any future component) and `menu`.
+**`menu`'s blocker is NOT a missing `render.ts` factory** — `Menu` DOES have
+one (`createMenu(h, hooks, Fragment)`, the same shareable-body shape
+`Table`'s own `createTable(h, hooks)` uses, per
+`space-ui-component-patterns`'s "Three implementation shapes"; needing
+per-renderer hooks doesn't preclude this pattern, that's exactly what it's
+for). The real blocker is structural: ICU's own tag mechanism wraps a chunk
+of inline content/text, not a whole `items: MenuItem[]` data structure —
+there's no attribute syntax a `<menu>...</menu>` tag could use to carry
+that array through translated message content in the first place. No
+consumer evidence has asked for it inside rich text either way. Don't
+assume adding either of these two tags is a small addition; `page`/`lc` are
+out of scope by ownership, `menu` is blocked by this structural mismatch,
+neither is a missing implementation detail.
 
 ### Population (`<props>key=val</props>`): a typed sentinel, never a string round-trip
 
@@ -141,9 +149,14 @@ never something the component itself needs to render a fallback for.
 - [ ] Does the tag render plain HTML directly (gets `"richtext"`), or a real
       component (inherits that component's own hook, never `"richtext"`)?
 - [ ] If adding a component-targeting tag, does a renderer-agnostic
-      `render.ts` factory actually exist for that component? If not (like
-      `Menu` today), the tag isn't a small addition — flag it rather than
-      building a one-off shortcut.
+      `render.ts` factory actually exist for that component? If not, the tag
+      isn't a small addition — flag it rather than building a one-off
+      shortcut. Also check the structural fit separately, even when a
+      factory DOES exist: `menu` has no target despite `Menu` having a real
+      `createMenu(h, hooks, Fragment)` factory, because ICU's own tag
+      mechanism wraps inline content/text, not a whole data-driven
+      `items[]` array — a missing factory and a structural mismatch are two
+      different blockers, don't conflate them.
 - [ ] Does any population/props mechanism route through the typed sentinel,
       never a stringified marker re-parsed via regex?
 - [ ] Is Markdown content kept out of the ICU formatter entirely — never

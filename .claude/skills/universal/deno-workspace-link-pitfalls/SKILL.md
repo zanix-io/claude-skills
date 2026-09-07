@@ -191,6 +191,21 @@ package's own `deno.jsonc` `imports` map shows its internal aliases resolving re
 that file, don't guess), never the bare checkout directory, even though the bare directory is also
 a syntactically valid (and, per spec, should-also-work) prefix.
 
+**A related, confirmed addendum for a package whose own entry file lives OUTSIDE `.../src/`, at the
+package root itself** (2026-09-05, `@zanix/space` TEMP-linking `@zanix/space-ui` — its `mod.ts` and
+`mod-preact.ts` live at the checkout root, not under `src/`): a `.../src/` scope alone doesn't cover
+that root-level entry file's own bare-specifier resolution, since the root file itself falls outside
+the `.../src/` prefix. Fixed by adding a SECOND `scopes` entry at the package's own root
+(`"../space-ui/"`) alongside the `.../src/` one — root for the root-level entry files, `.../src/`
+for everything under it — rather than relying on either prefix alone. Also confirmed needed in the
+same repro: the linked package's own COMPLETE `imports` map has to be reproduced in the scope's
+value, not just its relative-path aliases (`components/`, `typings/`, …) — its own `jsr:`/`npm:`
+bare specifiers (whatever ITS internal files reference) need to resolve too, or those come up
+unresolved instead. This was for directly exercising a whole linked package's own build output
+(not the narrower "pin one dependency back to a published range" case Footgun 2 above documents),
+so treat the root+`.../src/` double-scope as the confirmed workaround for that broader use case
+specifically, not yet verified against the narrower pinning case this footgun's own repro used.
+
 ## Footgun 3 — a TEMP override on a package's bare `.` export does NOT cover its other subpaths — each one needs its own entry, and a missed one can masquerade as an unrelated bug
 
 A real, general footgun, confirmed via a real, live `deno run` repro (not `deno info --json` alone)

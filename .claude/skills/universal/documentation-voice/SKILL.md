@@ -1,6 +1,6 @@
 ---
 name: documentation-voice
-description: English-only, present-tense voice for everything published or read by another engineer — JSDoc, README/docs/CHANGELOG, code identifiers, and inline comments — with one real exception for genuine @deprecated markers. Never a reference to an authoring session, a plan, or a phase/stage of work. Use whenever writing or auditing JSDoc, README/docs, or code in any Zanix package.
+description: English-only, present-tense voice for everything published or read by another engineer — JSDoc, README/docs/CHANGELOG, code identifiers, and inline comments — with one real exception for genuine @deprecated markers. Never a reference to an authoring session, a plan, or a phase/stage of work. Also owns comment conciseness: a rationale stated once and linked to, never restated at every site that shares it, and a comment rewritten on change rather than extended with a new caveat next to the old one. Use whenever writing or auditing JSDoc, README/docs, or code in any Zanix package.
 ---
 
 One voice rule, three surfaces: JSDoc (`jsdoc-jsr-audit`), README/`docs/`/
@@ -52,6 +52,30 @@ apply, kept in one place so it can't drift between them.
   reason worth keeping — the distinction is between a fact that explains
   *why the code is shaped this way* (keep it) and a note about *when/how it
   got edited* (cut it).
+- **State a rationale once, then point — restating it doesn't count as
+  linking.** A comment that says "same reasoning as `X` above" or "see `Y`'s
+  own doc for the full reasoning" and then re-explains that reasoning anyway
+  has paid for both copies and saved nothing. Real, confirmed cases:
+  `notifications/src/modules/whatsapp/defs.ts`'s `TWILIO_WHATSAPP_FROM_ENV`
+  doc restates in full the sender-number-split rationale `sms/defs.ts`'s
+  `TWILIO_FROM_NUMBER_ENV` doc already states, instead of one owning it and
+  the other linking; `server/src/typings/targets.ts` pastes the identical
+  ~80-word `retryInterval` sentence into three separate JSDoc blocks in the
+  same file. When a fact is shared by more than one symbol, exactly one of
+  them states it — every other one links to it (`{@link X}`, "see `X`") and
+  stops there, no re-summary riding along with the link.
+- **A comment gets rewritten when it changes, not extended.** Editing a
+  comment because the behavior it describes changed means replacing what's
+  there with the current single statement of that fact — not appending a new
+  sentence, caveat, or headed sub-section next to what was already there.
+  A single JSDoc block that accretes multiple sections each restating the
+  same point in new words is this same violation spread across one comment
+  instead of several — confirmed real in `auth/src/modules/middlewares/
+  page-session.guard.ts`'s doc block, where a "Rotation cadence" section
+  makes its one point three times in slightly different words and the
+  `@param` doc for that same option restates the section's own conclusion
+  again on top of that. If a comment needs a second pass, cut whatever the
+  new sentence supersedes — don't leave both standing.
 - **`CHANGELOG.md`'s own narrative voice is not this violation — and it is
   scoped to that literal file only.** A changelog entry's whole job is to
   say what changed ("Fixed: X now does Y instead of Z") — that's the
@@ -90,3 +114,8 @@ itself marked deprecated in code right now? If not, it doesn't qualify —
 - [ ] No reference to a session, a plan, or a phase/stage of work.
 - [ ] Any `@deprecated`/deprecation notice matches something genuinely
       deprecated in the real code today, not a stand-in for "this changed."
+- [ ] No rationale duplicated where a link would do — check whether this
+      exact justification already lives on another symbol before writing it
+      again, in this file or a sibling one.
+- [ ] An edited comment states the current fact once — no leftover caveat or
+      sub-section from a prior version still sitting next to the new one.

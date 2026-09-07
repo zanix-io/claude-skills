@@ -62,10 +62,10 @@ renderers differ in when the fallback's own UI actually becomes visible:
   HTML, with zero client JS required.
 - **React**: the SSR response ships a postponed-recovery marker instead of
   the real error; the fallback becomes visible once the client hydrates.
-  Every auto-generated client entry calls `hydrateComets();
-  hydrateErrorBoundaries(); initOrbit();` automatically
-  (`client-entry-plugin.ts`), so this happens on every page load with no
-  extra wiring — not an unimplemented gap.
+  Every auto-generated client entry calls `initClientEntry()`, which runs
+  `hydrateComets()`, `hydrateErrorBoundaries()`, then `initOrbit()`
+  automatically (`client-entry-plugin.ts`), so this happens on every page
+  load with no extra wiring — not an unimplemented gap.
 
 `reset` on `ErrorBoundaryProps`, once interactive on either renderer, is
 always `retryOutlet` — a real re-fetch/swap of the current page, never a

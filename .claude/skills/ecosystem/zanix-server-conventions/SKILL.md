@@ -213,9 +213,8 @@ export class OverviewSocket extends ZanixWebSocket {
 
 ## Interactors / Services
 
-`@Interactor()` takes no single-slot `Connector`/`Provider` option (that was
-removed in `@zanix/server` v3.0.0) — every dependency, whatever the count, is
-reached through the dynamic getters:
+`@Interactor()` takes no single-slot `Connector`/`Provider` option — every
+dependency, whatever the count, is reached through the dynamic getters:
 
 ```ts
 export class AuthService extends ZanixInteractor {
