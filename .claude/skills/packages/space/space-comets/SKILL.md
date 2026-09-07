@@ -67,6 +67,24 @@ path.
    real repro, not theoretical — if a Comet's content disappears right
    after the page loads rather than failing to appear at all, check the
    export first.
+
+   **A factory-returned named function *expression* needs the name passed
+   explicitly** (`defineComet`'s optional third argument, since
+   `@zanix/space@1.8.0`): `function createWidget() { return function Widget()
+   {...} }` — `Widget`'s name has no top-level declaration protecting it, so
+   `zanix space build`'s default minification and its `--obfuscate` pass can
+   both strip it from the client's own bundled chunk (confirmed via a real
+   A/B build; `@zanix/space-ui`'s own `NavDrawer` is exactly this pattern,
+   and now passes its name this way — see `NavDrawer/index.ts`). The failure
+   looks identical to the missing-export case above (correct server HTML,
+   silent hydration failure) but throws *inside* the dynamically-imported
+   chunk's own module evaluation instead — never reaching the page's own
+   console, though `hydrateComets`'s `.catch()` does log it via
+   `logger.error`. `--no-minify`/`zanix space dev` never rename identifiers,
+   so the exact same component works there either way, which is what makes
+   this easy to miss until a real production build. Fix:
+   `defineComet(Widget, import.meta.url, 'Widget')`, never relying on
+   `Widget.name` to survive the build.
 3. **`import.meta.url`, always at this exact call site** — correlated at
    build/serve time to the hashed client build URL (see "Why the manifest
    exists" below).
@@ -360,6 +378,13 @@ package.
       (missing any one silently breaks manifest correlation or client-side
       resolution, not always loudly — a missing `export` in particular
       renders fine server-side and only fails silently on hydration)?
+- [ ] Is the component a named function *expression* returned from a factory,
+      rather than a top-level declaration? Pass its name explicitly as
+      `defineComet`'s third argument (`@zanix/space@1.8.0`+) — its runtime
+      `.name` has no top-level declaration protecting it from
+      `zanix space build`'s default minification or its `--obfuscate` pass,
+      both of which can strip it even though the same component hydrates
+      fine under `--no-minify`/`zanix space dev`.
 - [ ] Does `defineComet`/`loadCometManifest` import from `@zanix/space/comet`
       — never the root `@zanix/space` barrel, which is a real hard build
       failure for a Comet's own client bundle, not just a lint nit?
