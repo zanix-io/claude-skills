@@ -71,6 +71,23 @@ A published app can also run in isolation before/without a host, via its
 own `.serve()` (`app-manifest-and-composition`) — useful for the publishing
 team's own local testing.
 
+**Two different "run this without cloning" questions — don't conflate
+them.** "No discovery mechanism exists" (above) answers only ONE of them: a
+*host* can't hand `Zanix.start()` a bare package name/specifier and have it
+import + compose the app for you — that genuinely doesn't exist and isn't
+planned. It does NOT mean a package with its own runnable entrypoint
+(`server`/`space-server`, a `mod.ts` that itself calls
+`Zanix.start()`/`bootstrapServers()`) can't be run standalone, with no host
+at all — `deno run -A jsr:@scope/pkg` (pin a version:
+`jsr:@scope/pkg@^1.0.0`) is Deno/JSR's OWN package-by-name resolver, already
+solved by the runtime, nothing `@zanix/app`-specific to build for it. The
+only thing that blocks THAT is an invalid/missing `exports`/`name` in the
+package's own `deno.json` — a packaging gap, not an architecture gap (a real
+one existed in `@zanix/cli`'s own scaffold: `baseZnxConfig` used to write a
+real `exports`/`publish` shape only for `library`/`app`, leaving every
+freshly-scaffolded `server`/`space`/`space-server` project unpublishable by
+default — fixed as of 2026-09-07, every type gets it now).
+
 ## Factory vs. pre-built constant — deciding which shape to export
 
 ```ts

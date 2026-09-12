@@ -119,13 +119,6 @@ mistake it for a real styling bug while iterating in dev.
 
 ## Manifest loading and why it exists
 
-```ts
-// main.ts
-import { loadCometManifest } from '@zanix/space/comet'
-
-await loadCometManifest('./dist/client/comets-manifest.json')
-```
-
 The same comet source file is evaluated twice — once server-side (a direct
 Deno import producing real HTML) and once inside the client build (its own
 bundled chunk) — two separate module instances/environments. `import.meta.url`
@@ -136,6 +129,13 @@ during the client build; `loadCometManifest` reads it back at startup so
 manifest is needed in development — Vite's dev server serves every project
 file at its own root-relative path, so `defineComet` derives a working URL
 directly, with no build step.
+
+`defineSpaceApp({ clientBuildDir })` is the primary way `loadCometManifest`
+actually gets called in a real app — see `space-assets-and-media`'s own
+"Wiring the client build output at runtime" for the full mechanism (all
+seven manifest/build-output loaders this one option drives, ordering,
+why dev mode skips it). Calling `loadCometManifest` directly in `main.ts`
+is only for an app that doesn't set `clientBuildDir` at all.
 
 ## Using a comet, and hydration timing
 

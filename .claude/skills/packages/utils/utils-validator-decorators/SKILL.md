@@ -50,10 +50,17 @@ raw lowercase predicate (`isString`, `isEmail`, ...).
 | `IsDate(options?)` | `true` — converts via `new Date(...)`, rejects `Invalid Date` | yes |
 | `MinDate(date, options?)` | `true` | yes |
 | `MaxDate(date, options?)` | `true` | yes |
+| `MinAge(years, options?)` | `true` | yes |
+| `MaxAge(years, options?)` | `true` | yes |
 
 Pass `{transform: false}` on any of these to keep the raw input type
 instead of coercing — see `utils-validator-core` for the general
 `expose`/`transform` mechanics these all follow.
+
+`MinAge`/`MaxAge` take a year count (`@MinAge(18)`), not a `Date` like
+`MinDate`/`MaxDate` — the threshold is recomputed from `new Date()` on every
+validation call, so age-based checks never go stale the way a hardcoded
+`@MaxDate(new Date())` literal would.
 
 ## Arrays
 

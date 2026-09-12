@@ -31,6 +31,37 @@ registerDlqModel() // once per app, not once per processor
 Resolved via `this.providers.get(DlqProvider)`, registered under the `'dlq'`
 core-provider slot — no static worker slots needed beyond that.
 
+**Auto-registered against the default Mongo connector once `DLQ_MODEL_NAME` is
+set** (`mongo/connector/dlq.ts`'s `autoRegisterDlqModelOnStart`, called from
+`ZanixMongoConnector.initialize()` in `mongo/connector/mod.ts:445` — before
+`defineModels.call(this)`, since registration is just an in-memory schema
+registration, not a query, so it needs none of `loadPersistedTriggersOnStart`'s
+own post-`connect()` timing). Three guards, mirroring nothing else in this
+package quite the same way triggers does (DLQ is opt-in and single-instance,
+triggers is on-by-default and genuinely per-connector):
+`isDlqResourceEnabled()` (`DLQ_MODEL_NAME` set — directly, or via the
+same-named `@zanix/core` setup option, which only ever sets that env var),
+`resolvedConnectorKey === DEFAULT_CONNECTOR_KEY` (never auto-fires for a
+non-default connector — same double-registration risk as calling
+`registerDlqModel()` manually against every connector in a multi-connector
+app), and `!isDlqModelRegistered()` (a new export, `dlq.model.ts` — an
+explicit `registerDlqModel(options)` call made during the app's own bootstrap,
+which runs before `Zanix.start()` instantiates connectors, always wins; the
+hook never re-registers over it, so options with no env var equivalent —
+`payloadFields` — never get silently discarded). An explicit call is still the
+only way to host DLQ on a non-default connector, or to set `payloadFields`.
+
+Requires an actual instance in the default Mongo connector slot to exist at
+all — `MONGO_URI` set (`registerMongoConnector()`'s own `core.ts` auto-installs
+one) or the app's own `@Connector('database') class extends
+ZanixMongoConnector {}` (doesn't itself need `MONGO_URI` for the slot
+registration, only for the connector's own connection string) — not a new
+restriction, just the preexisting requirement for using (Mongo-backed) DLQ at
+all. Symmetric edge case: an app with no connector in the default slot at all
+(every connector custom, in other slots) never auto-registers even with
+`DLQ_MODEL_NAME` set — same limit `registerDlqModel()` already has without an
+explicit `connector` argument.
+
 **Older code/tests may still show `DLQProvider`/`registerDLQModel` (etc.,
 all-caps `DLQ`)** — this package converged its DLQ symbols on `Dlq` casing
 per `naming-and-structure-conventions`; the old names are kept as
@@ -142,7 +173,10 @@ lease-fenced resource.
 ## Checklist before adding a new DLQ-processed entity
 
 - [ ] Is `registerDlqModel()` called exactly once for the whole app, not once
-      per `processType`?
+      per `processType`? (The default connector's own auto-registration off
+      `DLQ_MODEL_NAME` — see "Registration and access" above — already
+      satisfies this without an explicit call, as long as `payloadFields`
+      isn't needed and DLQ isn't hosted on a non-default connector.)
 - [ ] If payload protection matters here, is the env var that backs it
       actually confirmed present in the deployment — not just assumed,
       given this fails open silently?

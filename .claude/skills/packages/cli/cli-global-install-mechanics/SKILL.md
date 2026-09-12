@@ -145,6 +145,51 @@ add-it-if-you-hit-the-error note beneath the base command, never folded
 into the base command itself. Check both still show it that way before
 trusting either as current.
 
+## A SEPARATE, RUNTIME re-exec has the identical `--config`-loss gap, at a different layer
+
+Everything above is about `deno install -g`'s own INSTALL-TIME shim generation. This section is
+about a genuinely different mechanic that shares the exact same root cause: a Deno process that
+spawns a CHILD Deno process (`new Deno.Command(Deno.execPath(), { args: ['run', ...] })`) never has
+that child automatically inherit the PARENT's own governing `--config` — the child does its own
+config-file auto-discovery from `Deno.cwd()` unless `--config` is passed explicitly, same as
+`deno install -g`'s own shim.
+
+`native-dependency-freshness-guard.ts`'s own `guardAgainstStaleNativeDependencies` — which runs at
+the very start of every real `zanix space dev`/`build`, checking whether `@zanix/server`/
+`@zanix/app` resolve newer than what `@zanix/cli`'s own committed lock has pinned, and re-execing
+the whole process under a merged lock when they do — used to spawn its child with `--lock
+<mergedLockPath>` alone, no `--config` at all. Under a genuine global install, that child auto-
+discovers the SERVED PROJECT's own config from `Deno.cwd()` instead of the shim's — losing every
+one of `@zanix/cli`'s own internal path aliases (`commands/`, `typings/`, `shared/`, `utils/`) its
+own source needs to resolve itself at all. **Confirmed live, real reproduction**: the re-exec'd
+child printed `zanix space`'s own command-group help text instead of running `dev`, then threw
+`Module not found "https://jsr.io/@zanix/space/.../bundler/preact/debug"` — both symptoms of
+`@zanix/cli`'s own command-registration graph failing to resolve itself, not anything specific to
+`space`/`dev`. This is the EXACT trigger this skill's own description already names — "a real
+global install of `@zanix/cli` rejects a freshly-published/npm-cached dependency" — just one layer
+later than the install-time gaps above: it fires the moment someone publishes a new
+`@zanix/server`/`@zanix/app` and then runs `zanix space dev`/`build` against a global install that
+hasn't caught up yet.
+
+**The fix**: the child now also gets `--config <path>` — `getCliConfigPath()`'s own real answer for
+a local checkout, or the shim's own generated `deno.json` (the guaranteed sibling of
+`locateCliLockPath()`'s own result in every install shape) for a genuine global install. Verified
+end to end against a real served project (`--local` install, a genuinely stale native-dependency
+lock): the re-exec now boots successfully instead of crashing.
+
+**Also new**: `--no-cache` on `zanix space dev`/`build` skips this same guard's own 24h freshness
+cache for one run, forcing a real check — for exactly the workflow that surfaces this gap in the
+first place (publish a new `@zanix/server`/`@zanix/app`, then immediately test), instead of either
+waiting out the cache or hunting down and deleting `.zanix-native-freshness-cache.json` by hand
+(sibling of whatever `locateCliLockPath()` resolves to — the shim's own directory for a global
+install, the local checkout's own directory otherwise).
+
+Same "check this before assuming a resolver bug" posture as the install-time gaps above: a
+`zanix space dev`/`build` crash showing `space`'s own help text instead of actually running, right
+after a `@zanix/server`/`@zanix/app` publish, is this mechanic — not a bug in whatever the crash
+happened to be doing when the guard's own log line ("A newer @zanix/server/@zanix/app is
+available...") scrolled past unnoticed just before it.
+
 ## Checklist before diagnosing a global-install dependency-resolution failure as a resolver bug
 
 - [ ] Was `@zanix/cli` installed via `src/installation/setup.ts` (`deno run
@@ -177,6 +222,13 @@ trusting either as current.
       only against a stale/plain one? A failure that only reproduces on a
       plain `deno install -g` is this skill's territory, not a genuine
       resolver regression.
+- [ ] Did `zanix space dev`/`build` print `space`'s own group help text
+      instead of actually running, shortly after logging "A newer
+      @zanix/server/@zanix/app is available..."? That's the SEPARATE
+      runtime re-exec gap (`native-dependency-freshness-guard.ts`'s own
+      `--config`-loss, see its own section above) — fixed, but only once the
+      global install itself is on a `@zanix/cli` version that includes the
+      fix; `--no-cache` forces the check that surfaces it sooner.
 
 ## Out of scope — do not do these
 

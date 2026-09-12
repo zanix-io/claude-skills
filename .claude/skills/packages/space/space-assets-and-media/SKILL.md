@@ -1,6 +1,6 @@
 ---
 name: space-assets-and-media
-description: Static asset serving (defineSpaceApp assetsDir), content-hashed assets (assetsPlugin/resolveAssetHref), build-time-only image/SVG optimization with the never-worsen rule and the SVG-sprite-id preservation footgun, and media transformation (video/thumbnail/voice via real ffmpeg). Use when serving a static file, optimizing an image/SVG, or transcoding video/audio.
+description: Static asset serving (defineSpaceApp assetsDir), content-hashed assets (assetsPlugin/resolveAssetHref), build-time-only image/SVG optimization with the never-worsen rule and the SVG-sprite-id preservation footgun, media transformation (video/thumbnail/voice via real ffmpeg), and the canonical explanation of defineSpaceApp({ clientBuildDir }) — the mechanism that auto-loads all seven production manifest/build-output loaders (comets, client entry, CSS, assets x2, PWA, sitemap) from a production main.ts, referenced by space-pwa for its own slice. Use when serving a static file, optimizing an image/SVG, transcoding video/audio, or wiring a real build's output at runtime.
 ---
 
 Covers everything under `defineSpaceApp({ assetsDir })` and the build-time
@@ -17,6 +17,11 @@ before assuming this summary is still accurate.
 - Reference an asset by its stable path (`/assets/logo.svg`), not by
   `import` — check this before assuming an asset needs a code change to be
   overridable.
+- `defineSpaceApp({ clientBuildDir })` already wires the hashed-assets
+  manifest (and six other production loaders) into a real `main.ts`
+  automatically — don't add a manual `loadAssetsManifest`/
+  `loadAssetsBuildOutput` call unless the app genuinely doesn't set
+  `clientBuildDir`.
 
 ## Static asset serving
 
@@ -52,10 +57,11 @@ export default defineConfig({ plugins: [...spacePlugin(), assetsPlugin({ assetsD
 ```
 
 ```ts
-// main.ts
-import { loadAssetsBuildOutput, loadAssetsManifest } from '@zanix/space'
-await loadAssetsManifest('./dist/client/assets-manifest.json')
-loadAssetsBuildOutput('./dist/client')
+// space.app.ts — `clientBuildDir` makes `setup()` load `assets-manifest.json`
+// (and the rest of a real build's output) automatically; see "Wiring the
+// client build output at runtime" below
+import { defineSpaceApp } from '@zanix/space'
+export default defineSpaceApp({ name: 'storefront', clientBuildDir: './dist/client' })
 ```
 
 ```tsx
@@ -70,6 +76,37 @@ never throws, never asserts existence. Serving does two lookups in order:
 hashed build output first (`Cache-Control: public, max-age=31536000,
 immutable` + a real `ETag`, the hash IS the filename), then falls back to
 the unhashed lookup with no special caching.
+
+## Wiring the client build output at runtime
+
+`defineSpaceApp({ clientBuildDir })` is the primary, documented way a
+production `main.ts` wires up a real build's output — set once (e.g.
+`'./dist/client'`, matching `zanix space build`'s own default `--out-dir`),
+its own `setup()` (which runs when `activateApps()` runs) automatically
+calls all seven manifest/build-output loaders this same directory feeds, in
+the required order: `loadCometManifest`, `loadClientEntryManifest`,
+`loadClientEntryProductionKey`, `loadCssManifest`, `loadAssetsManifest`,
+`loadAssetsBuildOutput`, `loadPwaBuildOutput`, then `loadSitemapManifest`
+(this last one only matters for `sitemap: 'auto'`). A production `main.ts`
+no longer has to call any of these seven itself.
+
+Omitted entirely by default — no file is read, at zero cost, same
+convention as `assetsDir`/`pwa`/`sitemap`. Skipped entirely under
+`znx space dev` (`isDevClientEnabled()`) — not because a missing manifest
+file would be an error (each loader already tolerates that fine), but
+because a STALE one on disk very much isn't: a real `zanix space build` and
+`znx space dev` commonly point at the same `clientBuildDir` on the same
+machine, and an earlier build's real output already sitting there is the
+common case in local development, not a rare one. Loading it under dev
+would resolve every Comet/stylesheet/asset to that OLD build's own hashed
+names instead of the current source Vite is actually serving.
+
+Calling one of the seven loaders directly in `main.ts` is now only for an
+app that doesn't set `clientBuildDir` at all — an unusual layout the option
+doesn't fit (e.g. a build output split across more than one directory).
+Setting `clientBuildDir` AND calling one of the seven by hand for the same
+app double-loads that one manifest harmlessly (the second call simply
+overwrites the first with the same file's own contents).
 
 ## Image/SVG optimization: `assetsPlugin({ optimize })`
 
@@ -174,3 +211,6 @@ video/thumbnails already require).
       claim being made about savings?
 - [ ] For audio, is the source genuinely `.wav` — lossy sources are silently
       left untouched even with `audio.voice` configured, by design?
+- [ ] Does `clientBuildDir` (or, for an app not using it, `main.ts`'s own
+      manual loader calls) genuinely match the client build's real output
+      directory — checked directly, not assumed consistent?

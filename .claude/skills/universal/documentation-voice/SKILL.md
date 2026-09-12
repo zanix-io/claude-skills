@@ -47,6 +47,26 @@ apply, kept in one place so it can't drift between them.
   mechanism/reason directly in the comment instead (e.g. describe what `nodeModulesDir: "auto"`
   does, don't cite the skill that explains it) — the same "state the real reason, don't point
   elsewhere" fix as the CHANGELOG case, just for a strictly worse pointer.
+- **Never name a real consumer/client app by name in shipped documentation** — a specific
+  customer's own package or repo (`profiles`, `web`, or any other org-specific
+  name that isn't a published `@zanix/*` package) has no business appearing in a PUBLISHED
+  library's `CHANGELOG.md`/JSDoc/README/inline comment. It leaks that client's identity and
+  internal structure to every JSR consumer or engineer who reads the doc, and — same "points at
+  something the reader can't reach" problem as the internal-skill case above — is usually
+  meaningless to a reader who has no relationship to that client anyway. A legitimate published
+  `@zanix/*` package (e.g. `@zanix/iam`, sometimes shortened to `zanix/iam` in prose) is NOT this
+  violation — it's a real, citable ecosystem package, not a client's private repo; the test is
+  whether the name resolves to something the reader could actually go find, not whether it's
+  formatted with an `@`. Confirmed real: `server/CHANGELOG.md`'s `4.3.0` and `4.2.7` entries,
+  `auth/CHANGELOG.md`'s `1.4.0` entry, `iam/CHANGELOG.md`'s entry, `space-ui/CHANGELOG.md`'s
+  `Textarea`/`DatePicker.icon` entries, plus inline comments in `auth`'s own test suite and
+  `iam/src/space/middleware.ts`, all named `profiles`/`web` by name; separately,
+  `iam`'s own default message catalog (`src/space/messages/en/index.json`) had a client's brand
+  name hardcoded into a generic, reusable logout string. All caught and fixed
+  2026-09-11. Describe the failure generically instead — "a consumer app's own
+  `imagePublicOrAuthGuard`...", "two separate consumer
+  apps' own cookie-consent guards..." — the technical shape of the bug is what matters and survives
+  intact; the client's name never needs to appear at all.
 - **Genuine engineering rationale is not session narrative, and stays.** "Two
   decoders because cliffy's `.option()` narrows per call" is a real, still-true
   reason worth keeping — the distinction is between a fact that explains
@@ -117,5 +137,8 @@ itself marked deprecated in code right now? If not, it doesn't qualify —
 - [ ] No rationale duplicated where a link would do — check whether this
       exact justification already lives on another symbol before writing it
       again, in this file or a sibling one.
+- [ ] No real consumer/client app or org-specific package/repo name (e.g. a
+      customer's own `@org/pkg`) named in shipped docs — describe the
+      failure or behavior generically instead.
 - [ ] An edited comment states the current fact once — no leftover caveat or
       sub-section from a prior version still sitting next to the new one.

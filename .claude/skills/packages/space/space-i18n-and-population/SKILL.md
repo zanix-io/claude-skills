@@ -1,6 +1,6 @@
 ---
 name: space-i18n-and-population
-description: langPreHandler/langGuard (URL-prefix language routing), populationGuard (segment/tenant resolution), and loadMessages (flat i18n content catalogs with population overrides) — the three mechanisms that decide which content variant a request gets. Use when adding a language, a population/tenant, or a new message key.
+description: langPreHandler/langGuard (URL-prefix language routing), populationGuard (segment/tenant resolution), and loadMessages (flat i18n content catalogs with population overrides, splittable into per-feature segment files like iam.json/profile.json) — the three mechanisms that decide which content variant a request gets. Use when adding a language, a population/tenant, a new message key, or splitting a growing catalog into segments.
 ---
 
 Covers the three request-time mechanisms that decide *which content variant*
@@ -137,12 +137,20 @@ export default defineSpaceApp({ name: 'storefront', messagesDir: './messages' })
 ```
 messages/
   en/
-    index.json                 # base catalog: { "home/title": "Welcome" }
+    index.json                 # base catalog segment: { "home/title": "Welcome" }
+    iam.json                    # another base segment — merged with index.json, see below
+    profile.json
     populations/
-      zanix.json                # override: only the keys that differ from the base
+      zanix.json                # override: only the keys that differ from the merged base
   es/
     index.json
+    iam.json
+    profile.json
 ```
+
+**Requires `@zanix/space >= 1.12.0`** for segment merging — below that version only
+`{lang}/index.json` is read as the base catalog; a segment file like `iam.json` is silently ignored
+by an older version, not an error.
 
 ```tsx
 import { loadMessages } from '@zanix/space'
@@ -167,27 +175,40 @@ function Home() {
 ```
 
 `messagesDir` accepts an array — same first-match-wins host-composition
-convention as `routesDir`/`assetsDir`, resolved independently per base/
+convention as `routesDir`/`assetsDir`, resolved independently per segment/
 override file. `loadMessages({lang, population?})` returns `Messages` — a
 flat `Record<string, string | CompiledMessageNode[]>`, never inspected/
 interpreted by this function itself (`CompiledMessageNode` mirrors
 `@formatjs/icu-messageformat-parser`'s own AST node shape, redeclared
-locally — `@zanix/space` never actually depends on FormatJS). Base +
-override are shallow-merged (`{...base, ...override}`), cached for the
-process lifetime keyed by `` `${lang}:${population ?? ''}` ``; concurrent
-calls for the same uncached key share one in-flight resolution. **Cache is
-bypassed entirely under `znx space dev`** — live-edit, no restart, same as
-`assetsDir`'s dev behavior.
+locally — `@zanix/space` never actually depends on FormatJS).
+
+**The base catalog is every `.json` file found directly under `{lang}/`**
+(never recursing into `populations/`, reserved for overrides), merged
+filename-sorted — `index.json` is a fine single-file default, not a
+hardcoded requirement. Split a growing catalog into feature-segmented files
+instead (`iam.json`, `profile.json`, `chat.json`, ...) whenever one file
+gets unwieldy — segments are expected to be namespaced/disjoint
+(`'profile/name'`, `'chat/heading'`), so merge order only matters for the
+unrecommended case of two segments sharing a key. The merged base, then the
+population override, are shallow-merged (`{...segments, ...override}`),
+cached for the process lifetime keyed by `` `${lang}:${population ?? ''}` ``;
+concurrent calls for the same uncached key share one in-flight resolution.
+**Cache is bypassed entirely under `znx space dev`** — live-edit, no
+restart, same as `assetsDir`'s dev behavior. `zanix space build` needs no
+extra configuration for a segmented catalog — its own compiler already
+walks every `.json` file under `messagesDir` recursively, not just
+`index.json`.
 
 **Real correctness constraint, not just a style rule**: catalogs must be
 flat, never nested — a nested shape would silently lose sibling keys on any
-merge collision. A missing override file resolves to the base catalog only
-(normal, no warning). A **missing base file logs a warning** and resolves to
-`{}` — it does not throw; language-level fallback/redirect is
-`langPreHandler`'s job, not this function's. A **malformed file** (invalid
-JSON, or not a flat object) logs an error and is skipped — base and override
-are validated independently, so a broken override degrades to base-only
-rather than failing the whole render.
+merge collision. A missing override file resolves to the merged base
+catalog only (normal, no warning). Finding **no base segment file at all**
+logs a warning and resolves to `{}` — it does not throw; language-level
+fallback/redirect is `langPreHandler`'s job, not this function's. A
+**malformed file** (invalid JSON, or not a flat object) logs an error and is
+skipped — every segment and the override are validated independently, so
+one broken segment degrades the merge to every other valid segment plus the
+override, never discarding unrelated valid content.
 
 No `react-intl`/formatting-library coupling in this resolution path itself — it
 returns whatever is on disk (raw ICU string or precompiled AST) unformatted.
@@ -231,3 +252,7 @@ Cross-references:
 - [ ] Is `clientBuildDir` declared if this app wants `loadMessages()` to read
       compiled catalogs in production — without it, production falls back
       to reading `messagesDir` live (uncompiled ICU strings, never AST)?
+- [ ] If splitting a base catalog into segment files (`iam.json`,
+      `profile.json`, ...), is `@zanix/space >= 1.12.0` actually satisfied —
+      an older version silently ignores every segment but `index.json`,
+      not an error?

@@ -117,9 +117,10 @@ and stops there, rather than either blocking forever or filing unreviewed.
   incidentally while doing unrelated work → `--repo <owning-package>` (the
   real `zanix-io/<name>` repo — confirmed real remotes exist for
   `datamaster`/`server`/`cli`/`notifications`/`auth`/`asyncmq`/`admin`/
-  `core`/`app`/`space-ui`/`utils`; `space` has no remote configured as of
-  this writing — fall back to `claude-skills` and say so explicitly if that
-  repo turns out to have no real target yet).
+  `core`/`app`/`space`/`space-ui`/`utils`; `iam` and `console` have no
+  remote configured as of this writing — fall back to `claude-skills` and
+  say so explicitly for either of those, or for any other package that
+  turns out to have no real target yet).
 - Genuinely unsure which package owns it → default to `claude-skills`,
   never guess a specific wrong package repo.
 

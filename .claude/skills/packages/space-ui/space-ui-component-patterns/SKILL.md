@@ -222,6 +222,43 @@ reasons.
   `space-ui-architecture`'s "A second cross-package hazard" section for the
   full mechanism and the fix (`shared/client-logger.ts`). Any new component
   that needs to log anything follows the same rule, not just these two.
+- **A real `<img>` (or any element with an image-fetching attribute — a
+  `<video poster>`, a future `<picture>`-based component's own `<source>`)
+  rendered with no `crossOrigin` escape hatch is a real, confirmed
+  session-cookie hazard, not a theoretical one** — found via a live,
+  reproduced bug in a real consumer: a profile-photo
+  `<img>` pointed at a cross-origin asset host that happened to share the
+  viewer's own hostname but a different port (a common same-machine-
+  different-service dev/prod topology). Browsers attach cookies to an image
+  request ambiently, with no CORS preflight, based on the target HOST alone
+  — cookies are never port-scoped — so the calling app's own session cookies
+  reached that other service, and ITS OWN response emitted a `Set-Cookie`
+  under the ecosystem's shared cookie names that clobbered the viewing app's
+  real session, silently logging the user out. `crossOrigin='anonymous'`
+  (no cookies sent, a CORS response required instead) is the fix, and it has
+  to be a prop the CALLER can set — the component itself has no way to know
+  whether its own `src` is same- or cross-origin at the point it's given
+  one. Fixed in `Image`/`Avatar` first, then audited across the rest of the
+  package once a second gap search request surfaced two more real,
+  unfixed instances: `Video` (native `<video crossorigin>` governs the
+  `poster` fetch too, per the WHATWG spec — no opt-out existed) and
+  `SocialNetworks`' image-logo variant (the one component in the whole
+  package that builds a raw `h('img', …)` directly rather than composing
+  `Image`). **The generalized rule for every future component**: any prop
+  that becomes a real `src` on an `<img>`/`<video>`/`<audio>`/`<source>` (or
+  any other element the HTML spec lets carry a `crossorigin` attribute)
+  needs its own `crossOrigin?: 'anonymous' | 'use-credentials'` prop,
+  forwarded unchanged onto that same native attribute, omitted by default so
+  no caller is forced into a CORS requirement their host doesn't actually
+  meet. `Card`/`ImgButton` needed no separate fix — both already spread a
+  full `Omit<ImageProps, 'alt'>` object into their own internal `Image({...})`
+  call, so `crossOrigin` reaches through automatically once `Image` itself
+  supports it, with zero code change on their end; `RichText`'s `img`/`video`
+  tags are the same story (an untyped `<props>` bag spread verbatim into
+  `Image`/`Video`), just underdocumented rather than actually broken. Check
+  every new `Image`/`Video`/`Avatar`/`Card`/`ImgButton`-composing component
+  for this before shipping, not just ones that look image-shaped at a
+  glance.
 
 ## Checklist before adding a new component
 
@@ -262,6 +299,13 @@ reasons.
       their OWN new `./runtime/<kebab-name>`/`./runtime/<kebab-name>/preact`
       subpath, never the root barrel and never an existing component's own
       `./runtime/*` file or any shared combined barrel.
+- [ ] Does this component render an `<img>`/`<video>`/`<audio>`/`<source>`
+      (or compose one that does) from a caller-supplied `src`? If so, does it
+      expose its own `crossOrigin?: 'anonymous' | 'use-credentials'`,
+      forwarded unchanged onto that native attribute — see the real,
+      confirmed session-cookie hazard documented above (`Image`/`Avatar`/
+      `Video`/`SocialNetworks`) before assuming a new image-rendering
+      component doesn't need one.
 - [ ] Does this component log anything? See `space-ui-architecture`'s "A
       second cross-package hazard" section — `shared/client-logger.ts`,
       never `@zanix/utils/logger` directly.

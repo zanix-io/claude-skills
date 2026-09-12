@@ -1,6 +1,6 @@
 ---
 name: space-pwa
-description: PwaConfig (author-facing icon/manifest/offline config via defineSpaceApp({ pwa })), loadPwaBuildOutput (the build-OUTPUT-facing runtime wiring in main.ts), and the network-first-navigation/cache-first-everything-else service worker — real icon resizing, a computed Web App Manifest, and a small custom service worker, all derived from ONE config, never a separately-configured pwaPlugin. Use when configuring PWA installability or debugging a stale/missing icon, manifest field, or service worker.
+description: PwaConfig (author-facing icon/manifest/offline config via defineSpaceApp({ pwa })), loadPwaBuildOutput (the build-OUTPUT-facing runtime wiring, auto-loaded by defineSpaceApp({ clientBuildDir }) — a manual main.ts call is only for the narrower case of not using clientBuildDir), and the network-first-navigation/cache-first-everything-else service worker — real icon resizing, a computed Web App Manifest, and a small custom service worker, all derived from ONE config, never a separately-configured pwaPlugin. Use when configuring PWA installability or debugging a stale/missing icon, manifest field, or service worker.
 ---
 
 Covers `@zanix/space`'s PWA support — real icon resizing, a computed Web App
@@ -22,11 +22,14 @@ File:line references point at `~/Documents/Development/ZanixLibraries/space`
 ## Configuration: `PwaConfig`, and wiring the build output at runtime
 
 ```ts
-// space.app.ts — author-facing config: identity, icon, offline behavior
+// space.app.ts — author-facing config: identity, icon, offline behavior,
+// AND the build output dir — `clientBuildDir` makes `setup()` (which runs
+// when `activateApps()` runs) call `loadPwaBuildOutput` itself
 import { defineSpaceApp } from '@zanix/space'
 
 export default defineSpaceApp({
   name: 'storefront',
+  clientBuildDir: './dist/client', // the client build's own output dir
   pwa: {
     name: 'Storefront',
     themeColor: '#2563eb',
@@ -36,35 +39,43 @@ export default defineSpaceApp({
 })
 ```
 
-```ts
-// main.ts — after activateApps(), before bootstrapServers(); same convention
-// as loadCssManifest/loadCometManifest
-import { loadPwaBuildOutput } from '@zanix/space'
-
-loadPwaBuildOutput('./dist/client') // the client build's own output dir — WHERE the build wrote
-// the generated icons/sw.js, never author configuration, so it's never a `defineSpaceApp({ pwa })`
-// field
-```
-
 `PwaConfig` deliberately contains only what an author wants to express —
 identity/icon/behavior — **never a build-output path**: icons and the
 service worker are generated at `zanix space build` time into whatever
 output directory the build actually used, and the runtime discovers that
-directory itself via `loadPwaBuildOutput`, the same precedent
-`loadCometManifest`/`loadCssManifest` already set. **An author never calls
-`pwaPlugin` directly** — `zanix space build` composes it internally from
-the same `PwaConfig` (via `resolvePwaPluginOptions`), the same way it
-composes `cssPlugin`/`cometPlugin`. `pwaPlugin` is still exported from
-`@zanix/space/vite` for an advanced/custom build pipeline that bypasses the
-CLI entirely, but that's not the documented path.
+directory itself via `loadPwaBuildOutput`. `defineSpaceApp({ clientBuildDir })`
+already calls `loadPwaBuildOutput` (and six other loaders) for a production
+`main.ts` automatically — see `space-assets-and-media`'s "Wiring the client
+build output at runtime" for the shared mechanism and the full loader list.
+**An author never calls `pwaPlugin` directly** — `zanix space build`
+composes it internally from the same `PwaConfig` (via
+`resolvePwaPluginOptions`), the same way it composes `cssPlugin`/
+`cometPlugin`. `pwaPlugin` is still exported from `@zanix/space/vite` for an
+advanced/custom build pipeline that bypasses the CLI entirely, but that's
+not the documented path.
 
-**Real footgun**: `loadPwaBuildOutput`'s argument must be the SAME
+Calling `loadPwaBuildOutput` directly in `main.ts` is only for an app that
+doesn't set `clientBuildDir` at all (e.g. a custom build layout the option
+doesn't fit):
+
+```ts
+// main.ts — only when NOT using `clientBuildDir`; after activateApps(),
+// before bootstrapServers()
+import { loadPwaBuildOutput } from '@zanix/space'
+
+loadPwaBuildOutput('./dist/client') // must match the client build's real output dir
+```
+
+**Real footgun, whichever path wires it**: the directory passed to
+`loadPwaBuildOutput` (directly, or via `clientBuildDir`) must be the SAME
 directory the client build actually wrote to (whatever `zanix space build`'s
 `--out-dir` used) — build-time (Vite/Node) and request-time (the deployed
 Deno server) have no shared memory to enforce this automatically. A missing
-or wrong call isn't an error: icon/service-worker routes are simply never
+or wrong value isn't an error: icon/service-worker routes are simply never
 registered, and `/manifest.webmanifest` alone still works either way, since
-it needs no built file at all.
+it needs no built file at all. `clientBuildDir` is also skipped entirely
+under `znx space dev` (a stale on-disk build would otherwise resolve to old
+hashed output) — see `space-assets-and-media` for why.
 
 `manifest.webmanifest`, icons, and `sw.js` are registered as real, explicit
 routes — the same underlying route-registration mechanism `Page()` uses
@@ -101,9 +112,9 @@ deliberate omission, not a gap).
 
 ## Checklist before changing PWA configuration
 
-- [ ] Does `main.ts`'s `loadPwaBuildOutput` argument genuinely match the
-      client build's real output directory — checked directly, not assumed
-      consistent?
+- [ ] Does `clientBuildDir` (or, for an app not using it, `main.ts`'s own
+      `loadPwaBuildOutput` argument) genuinely match the client build's real
+      output directory — checked directly, not assumed consistent?
 - [ ] Is `icon` set whenever `pwa` is configured at all — a PWA can't be
       installed without a real icon?
 - [ ] Is a maskable-icon request routed to a real design asset instead of a

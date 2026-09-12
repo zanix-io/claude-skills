@@ -37,11 +37,12 @@ import { cometPlugin, cssPlugin, spacePlugin } from '@zanix/space/vite'
 export default defineConfig({ plugins: [spacePlugin(), cometPlugin(), cssPlugin()] })
 ```
 
-```ts
-// main.ts — after activateApps(), before bootstrapServers()
-import { loadCssManifest } from '@zanix/space'
-await loadCssManifest('./dist/client/css-manifest.json')
-```
+`defineSpaceApp({ clientBuildDir })` is the primary way `loadCssManifest`
+actually gets called in a real app — see `space-assets-and-media`'s own
+"Wiring the client build output at runtime" for the full mechanism (all
+seven manifest/build-output loaders this one option drives). Calling
+`loadCssManifest` directly in `main.ts` is only for an app that doesn't set
+`clientBuildDir` at all.
 
 `cssPlugin(options?)` default options: `{ tailwind: true, modules: true,
 vanillaExtract: false }`. `modules: false` disables `*.module.css` → JS
