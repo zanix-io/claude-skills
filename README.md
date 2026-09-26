@@ -124,9 +124,9 @@ scope this genuinely applies to?_
 | `space-comets`                  | Selective hydration — `'use comet'`, `defineComet`, hydration timing, `persist`, `'server-only'` enforcement, plus the ready-made Comet catalog (`FormDraftPersistence`, `SubmitGuard`, `ScrollRestoration`, `UnsavedChangesGuard`, `NetworkStatus`, `ManagedForm`). |
 | `space-orbit-navigation`        | Client-side navigation — `initOrbit`, prefetch config, `renderToResponse`/`useRequestCache`, the `initialState` serialization contract. |
 | `space-middleware-and-security` | Zero-config CSP/security headers, `defineMiddleware`/`cspGuard`/`securityHeadersGuard`, and `csrfGuard`.                                |
-| `space-i18n-and-population`     | `langPreHandler`/`langGuard`, `populationGuard`, and `loadMessages` — which content variant a request gets.                             |
+| `space-i18n-and-population`     | `langPreHandler`/`langGuard`, `populationGuard`, and `loadMessages` (plus `messageSources`, a library's shipped catalogs) — which content variant a request gets. |
 | `space-head-and-seo`            | `<title>`/`<meta>`/`<link>` precedence/dedup, `buildCanonicalLink`/`buildHreflangLinks`, and `robots.txt`/`sitemap.xml`.                |
-| `space-styling-and-theming`     | `cssPlugin`, the design-token convention, and `defineSpaceApp({ theme: { resolve } })`.                                                 |
+| `space-styling-and-theming`     | `cssPlugin`, global/page/comet CSS delivery (plus `cssSources`, a library's shipped stylesheets), the design-token convention, and `defineSpaceApp({ theme: { resolve } })`. |
 | `space-assets-and-media`        | Static assets, content-hashed assets, image/SVG optimization, and video/audio transcoding.                                              |
 | `space-pwa`                     | `pwaPlugin`/`defineSpaceApp({ pwa })`, icons, and the service worker strategy.                                                          |
 | `space-validation`              | The build-time document validation system — severity/opt-in/strict, the `basis` field, and what's deliberately never checked.           |

@@ -1,6 +1,6 @@
 ---
 name: space-i18n-and-population
-description: langPreHandler/langGuard (URL-prefix language routing), populationGuard (segment/tenant resolution), and loadMessages (flat i18n content catalogs with population overrides, splittable into per-feature segment files like iam.json/profile.json) — the three mechanisms that decide which content variant a request gets. Use when adding a language, a population/tenant, a new message key, or splitting a growing catalog into segments.
+description: langPreHandler/langGuard (URL-prefix language routing), populationGuard (segment/tenant resolution), and loadMessages (flat i18n content catalogs with population overrides, splittable into per-feature segment files like iam.json/profile.json, plus defineSpaceApp({ messageSources }) for catalogs a library ships) — the three mechanisms that decide which content variant a request gets. Use when adding a language, a population/tenant, a new message key, splitting a growing catalog into segments, or shipping/overriding a package's default messages.
 ---
 
 Covers the three request-time mechanisms that decide *which content variant*
@@ -174,9 +174,12 @@ function Home() {
 }
 ```
 
-`messagesDir` accepts an array — same first-match-wins host-composition
-convention as `routesDir`/`assetsDir`, resolved independently per segment/
-override file. `loadMessages({lang, population?})` returns `Messages` — a
+`messagesDir` accepts an array so a host composes a base app's catalogs with
+its own directory. Since `@zanix/space` 1.16.0 a file present in several
+roots is merged **key by key**, the earlier root winning a shared key and a
+key only a later root defines still resolving — so a host's file only needs
+the messages it changes. Base segments and the population override each
+merge this way independently. `loadMessages({lang, population?})` returns `Messages` — a
 flat `Record<string, string | CompiledMessageNode[]>`, never inspected/
 interpreted by this function itself (`CompiledMessageNode` mirrors
 `@formatjs/icu-messageformat-parser`'s own AST node shape, redeclared
@@ -209,6 +212,63 @@ fallback/redirect is `langPreHandler`'s job, not this function's. A
 skipped — every segment and the override are validated independently, so
 one broken segment degrades the merge to every other valid segment plus the
 override, never discarding unrelated valid content.
+
+### A library shipping its own catalogs: `messageSources`
+
+A package has no directory an app could list in `messagesDir`, so it ships
+its default messages as a `MessagesSource` (type exported from
+`@zanix/space`, `src/modules/i18n/messages-types.ts`) and the app declares
+it — **requires `@zanix/space >= 1.16.0`**:
+
+```ts
+import { iamMessages } from '@zanix/iam/ui/sdk/messages'
+import { iamCssSource } from '@zanix/iam/ui/styles' // see "…and its CSS" below
+
+export default defineSpaceApp({
+  name: 'storefront',
+  messagesDir: './messages', // optional; sources work without it
+  messageSources: [iamMessages],
+  cssSources: [iamCssSource],
+})
+```
+
+`type MessagesSource = (lang, population?) => Messages | undefined |
+Promise<...>`. `loadMessages` calls each source once with `population`
+omitted (its base) and, when the request has a population, once more with
+it (its override: only the keys that differ). `undefined` means "nothing for
+this request" and is normal. The result is used as returned — `zanix space
+build` compiles `messagesDir` only, so a source that wants precompiled
+values returns the AST itself (`iamMessages` does). A source that throws or
+returns a non-flat value is logged and skipped, never failing the request.
+
+Precedence (`resolve()` in `src/modules/i18n/load-messages.ts`, tests in
+`src/@tests/unit/i18n/load-messages.test.ts`), lowest to highest:
+
+1. sources' base catalogs (earlier source wins a shared key),
+2. the app's `messagesDir` base segments — **the app always wins over a
+   package's default**, so an app rewords any shipped message by defining
+   that key in its own catalog, in any file name,
+3. the population override: the app's `populations/{population}.json`
+   merged over the sources' population answers, the app's again winning a
+   shared key. A source's population answer therefore beats the app's
+   *base* value for that key.
+
+Registration differs from `cssSources`: `defineSpaceApp({ messageSources })`
+**replaces** the registered list (`setMessageSources`), it doesn't append —
+a host that declares its own list must repeat a base app's sources.
+
+Real precedent: `@zanix/iam`'s `iamMessages` (`ui/sdk/messages.ts`) answers
+its compiled catalog for the base of a language it ships and `undefined` for
+any other language or any population, leaving those entirely to the app's
+own `messagesDir`. Its hosted pages declare the same source in `iam`'s own
+`space.app.ts`.
+
+**…and its CSS: `cssSources`.** The same library pattern for stylesheets:
+`CssSource = { name, css: string | () => string | Promise<string>, media? }`
+(`src/modules/render/css-sources.ts`), e.g. `@zanix/iam`'s `iamCssSource`
+(`ui/styles.ts`). It has no language or population axis at all. Cascade
+placement, naming and the dev/build materialization belong to
+`space-styling-and-theming`'s "Responsive delivery" section.
 
 No `react-intl`/formatting-library coupling in this resolution path itself — it
 returns whatever is on disk (raw ICU string or precompiled AST) unformatted.
@@ -256,3 +316,8 @@ Cross-references:
       `profile.json`, ...), is `@zanix/space >= 1.12.0` actually satisfied —
       an older version silently ignores every segment but `index.json`,
       not an error?
+- [ ] Rewording a message a package ships through `messageSources` (e.g.
+      `iamMessages`)? Define the key in this app's own `messagesDir`, never
+      fork the package. If this app declares its own `messageSources` on
+      top of a base app's, does it repeat the base's sources (the list
+      replaces, it doesn't append)?

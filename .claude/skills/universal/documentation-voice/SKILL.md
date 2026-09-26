@@ -61,12 +61,29 @@ apply, kept in one place so it can't drift between them.
   `auth/CHANGELOG.md`'s `1.4.0` entry, `iam/CHANGELOG.md`'s entry, `space-ui/CHANGELOG.md`'s
   `Textarea`/`DatePicker.icon` entries, plus inline comments in `auth`'s own test suite and
   `iam/src/space/middleware.ts`, all named `profiles`/`web` by name; separately,
-  `iam`'s own default message catalog (`src/space/messages/en/index.json`) had a client's brand
-  name hardcoded into a generic, reusable logout string. All caught and fixed
-  2026-09-11. Describe the failure generically instead — "a consumer app's own
+  `iam`'s own default message catalog (then `src/space/messages/en/index.json`, now
+  `ui/sdk/messages/{en,es}.ts`) had a client's brand name hardcoded into a generic, reusable
+  logout string. Describe the failure generically instead — "a consumer app's own
   `imagePublicOrAuthGuard`...", "two separate consumer
   apps' own cookie-consent guards..." — the technical shape of the bug is what matters and survives
   intact; the client's name never needs to appear at all.
+- **A one-time cleanup doesn't keep a consumer name out — a failing test does.** After the `iam`
+  cleanup above, commit `ea4628f` (session guards) put the same client back in three places: the
+  `iam/CHANGELOG.md` entry named its package, its `/web` app and its brand; the JSDoc in
+  `src/server/apps/auth.app.ts` cited the brand's `web:user` role; and a test comment in
+  `ui/@tests/unit/sdk/session-guard.test.ts` named its package. `iam`'s guard is
+  `ui/@tests/unit/sdk/consumer-neutrality.test.ts`, and its reach is narrower than its name:
+  - `/\bweb:/` (a consumer's role/cache namespace) plus the consumer app names it lists are
+    rejected only in the six shared login-flow modules it enumerates (`ui/sdk/login-flow.ts`,
+    `otp-channel.ts`, `otp-flow-cache.ts`, `client-registry.ts`,
+    `redirect-session-refresh-failure.ts`, `ui/space/login-pages.ts`).
+  - Its repo-wide check reads every `.ts`/`.tsx`/`.json` under `ui/` and `src/`, but only for the
+    app names, not `web:`, and it skips every `@tests/` directory.
+  - `ui/@tests/unit/sdk/messages.test.ts` and `ui/@tests/unit/styles.test.ts` apply the same
+    app-name check to the catalog values and the shipped stylesheet.
+  - Nothing reads `CHANGELOG.md`, `README.md`, `docs/` or test comments. Those are exactly the
+    surfaces the regression hit, so they stay review-only: grep them for the consumer's names
+    before a release, and extend the guard instead of trusting an earlier cleanup.
 - **Genuine engineering rationale is not session narrative, and stays.** "Two
   decoders because cliffy's `.option()` narrows per call" is a real, still-true
   reason worth keeping — the distinction is between a fact that explains

@@ -71,6 +71,18 @@ the rendered `<link>`.
 - **Global** (`defineSpaceApp({ globalCss: [...] })`) — order matters, a
   later entry can override an earlier one, preserved in `css-manifest.json`
   regardless of the hashed output filenames.
+- **From a package** (`defineSpaceApp({ cssSources: [...] })`, `@zanix/space
+  >= 1.16.0`) — a stylesheet supplied as text by a library that has no file
+  an app could list in `globalCss` (real precedent: `@zanix/iam`'s
+  `iamCssSource`). `zanix space build`/`dev` write each source to
+  `.space/css-sources/{name}.css` (add `.space/` to `.gitignore`), after
+  which it's an ordinary global stylesheet placed **ahead of** the app's own
+  `globalCss`, so an app rule of equal specificity wins by cascade. Unlike
+  `messageSources`, the list appends across `defineSpaceApp()` calls, and
+  redeclaring a `name` replaces that source in place. A package writes plain
+  hook selectors (`[data-space='x']`), not `:where()`, so its defaults still
+  beat the app's generic element rules. The library-shipping pattern and
+  its message-catalog twin are in `space-i18n-and-population`.
 - **Per page** — a `static styles: StylesheetRef[]` field on the page
   controller, resolved relative to that page's own file (co-located, like a
   Comet's own `import './x.module.css'`, deliberately not root-relative
