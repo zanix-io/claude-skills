@@ -24,22 +24,32 @@ own layers after its own domain, not after `AdminResource`/`admin-resources/`
 (see the naming note below).
 
 **The mechanical shapes below live inside `@zanix/console`'s own
-`admin-resources/`/`clients/`/`auth/` — not a separate published package.**
-A `@zanix/console-kit` package was extracted from `console` once, on the
-assumption that a second, independent deployer of this pattern (its own
-`zanix-admin` hub, its own consumer app) was imminent. That second consumer
-never materialized, and the extraction was reverted: the `AdminResource`
-type/safeguard, the hub-client-factory triad, and the auth-composition
-layer all moved back into `console`'s own `src/` tree as internal modules.
-A new consumer building this pattern today reimplements these shapes fresh
-(copying `console`'s own modules as the reference, the same size of work
-every earlier resource in `console` itself already proved is small) rather
-than importing a shared package. If a second real, independent consumer of
-this exact shape ever does show up, THAT is the point to re-extract these
-modules into an installable `@zanix/console-kit` package again — not
-before. Each layer section below still says explicitly which parts are
-this reusable mechanical shape (to copy) vs. genuinely per-consumer
-content (to write fresh).
+`admin-resources/`/`clients/`/`auth/` — not yet all in a separate published
+package, though a real re-extraction is underway.** A `@zanix/console-kit`
+package was extracted from `console` once, on the assumption that a second,
+independent deployer of this pattern (its own `zanix-admin` hub, its own
+consumer app) was imminent. That second consumer hadn't materialized yet,
+and the extraction was reverted: the `AdminResource` type/safeguard, the
+hub-client-factory triad, and the auth-composition layer all moved back
+into `console`'s own `src/` tree as internal modules.
+
+The trigger condition this skill named for re-extracting has since been
+confirmed real: `aeratech-console` is a second, independent deployer of
+this exact pattern, running its own `zanix-admin` hub and its own Triggers/
+Templates/DLQ vertical slices. `@zanix/console` is, accordingly, now being
+re-extracted into a real, importable JSR package — as of this writing its
+`exports` map (`console/deno.jsonc`) covers `./core` (backend-only
+core-provider slot registration) and `./theme` (a bundled semantic
+theme-token CSS contract), but does not yet cover the `AdminResource` type,
+the hub-client-factory triad, or a generic resource-page factory — the
+pieces layers 2, 3, 4, and 6 below describe. A new consumer building this
+pattern today still copies those specific modules from `console`'s own
+`src/` tree as the reference (the same size of work every earlier resource
+in `console` itself already proved is small), exactly as documented below,
+until `console`'s own `exports` map grows to cover them too. Each layer
+section below still says explicitly which parts are this reusable
+mechanical shape (to copy, for now) vs. genuinely per-consumer content (to
+write fresh).
 
 ## Golden rule (token savings)
 
@@ -53,10 +63,11 @@ content (to write fresh).
   (the hub-client-factory triad), 6 (auth composition), and a narrow slice
   of 4 (column/detail-field derivation) is a PROVEN, reusable shape too —
   `@zanix/console`'s own internal modules are the reference to copy from,
-  never redesign from scratch — even though, absent a real second
-  independent consumer today, a new consumer app copies/reimplements this
-  shape rather than importing it from a shared package (see the intro
-  above). What stays genuinely per-consumer, in every layer, is the DOMAIN
+  never redesign from scratch — even though a new consumer app today still
+  copies/reimplements this shape rather than importing it from a shared
+  package, since `@zanix/console`'s own real re-extraction into an
+  importable package (see the intro above) hasn't yet reached these
+  specific pieces. What stays genuinely per-consumer, in every layer, is the DOMAIN
   CONTENT poured into that shape: which concrete resource a descriptor
   describes, which concrete client class a factory wraps, which concrete
   columns/filters a page renders, which concrete service identity an auth
@@ -143,17 +154,19 @@ domain-fitting local name (e.g. `CatalogResource`) rather than keeping
 `console`'s own name — nothing about the shape itself is admin-specific,
 and there's no shared export to alias since it isn't a published type.
 
-**Not centralized into a shared package — deliberately, until a second
-real, independent consumer needs the identical shape.** Freezing a
-presentation-shaped type in a shared package before a genuine second
-consumer exists is speculative — this was tried once (`@zanix/console-kit`)
-and reverted for exactly that reason. `assertAdminResourceFieldsMatchRto`
-and `formatFieldValue` live alongside `AdminResource` in `console`'s own
+**Not yet in a shared package — `@zanix/console`'s own real re-extraction
+into an importable package hasn't reached this piece.** A
+`@zanix/console-kit` package was extracted once, before a genuine second
+consumer existed, and reverted for exactly that reason (see this skill's
+own intro). `aeratech-console` now confirms that second-consumer condition
+for real, and `@zanix/console` is being re-extracted into a real JSR
+package accordingly — but its current `exports` map (`./core`, `./theme`)
+doesn't cover `AdminResource` yet. `assertAdminResourceFieldsMatchRto` and
+`formatFieldValue` live alongside `AdminResource` in `console`'s own
 `src/admin-resources/`, with `columnsFromResource`/`detailFieldsFromResource`
-in the same file (see layer 4 below). A NEW consumer copies this file's
-shape into its own tree and writes concrete instances against its own copy
-— re-extracting it into a real shared package only becomes worth doing once
-a second genuine consumer of the identical shape exists.
+in the same file (see layer 4 below). A NEW consumer still copies this
+file's shape into its own tree and writes concrete instances against its
+own copy — until `console`'s own `exports` map grows to cover it too.
 
 **Reference the backend's real RTO by field name, never redeclare it:**
 
@@ -509,18 +522,21 @@ building a new resource.
   generator is still not unblocked, and remains out of this skill's own
   scope regardless.
 - Extracting the `AdminResource` shape, the hub-client-factory shape, the
-  auth composition layer, or column/detail-field derivation into a shared
-  `@zanix/console-kit` (or any other) package before a second real,
-  independent consumer of the identical shape genuinely exists. This was
-  tried once, speculatively, and reverted — see this skill's own intro and
-  layer 2's "Naming" note for the real trade-off a premature extraction
-  introduces (a presentation-shaped type frozen in a published package
-  before there's a second real caller to validate its shape against). Don't
-  centralize this pattern's own mechanical shape into `@zanix/utils` or any
-  other shared package either, for the same reason — the bar is a
-  confirmed second-consumer need, not "this looks reusable" (a generic
-  page-shell factory was checked against exactly this bar and didn't clear
-  it — see layer 4 above).
+  auth composition layer, or column/detail-field derivation into
+  `@zanix/console`'s own installable package yourself, as part of building
+  a new consumer against this pattern. That re-extraction is a real,
+  separate, in-progress effort inside `@zanix/console` itself now that a
+  second real independent consumer (`aeratech-console`) confirms the
+  trigger condition this skill's own intro names — but it's `@zanix/console`'s
+  own maintenance track, not something a new consumer's own build re-derives
+  or duplicates. Keep copying whichever pieces aren't yet in `console`'s own
+  `exports` map (everything besides `./core`/`./theme`, as of this writing)
+  from its own modules, per each layer above, until that package's own
+  `exports` map grows to cover them. Don't centralize this pattern's own
+  mechanical shape into `@zanix/utils` or any other shared package either —
+  the bar for a generic-utility extraction is a confirmed cross-cutting
+  need, not "this looks reusable" (a generic page-shell factory was checked
+  against exactly this bar and didn't clear it — see layer 4 above).
 - Designing a `zanix new --template <name>` scaffold preset for this
   pattern. Real, already-built preset infrastructure exists in `@zanix/cli`
   (`ScaffoldRecipeRegistry`), but adding a second preset is a product

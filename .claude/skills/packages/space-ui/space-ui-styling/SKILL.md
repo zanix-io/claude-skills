@@ -1,6 +1,6 @@
 ---
 name: space-ui-styling
-description: @zanix/space-ui's headless styling architecture — className as the only styling prop, data-space-ui as a stable (not styling) selector hook, the theme/ vs shared/ starter templates, --space-* token composition, why BEM/Tachyons aren't part of this package, and the nonce prop Modal/Drawer/Toast/Tooltip/Popover accept to stay CSP-compliant (a component-rendered `<style nonce>` element plus, for Tooltip/Popover's dynamic offset, CSSOM rule mutation — never an inline style attribute or an external stylesheet). Use when adding data-space-ui to a new component, writing/reviewing an optional stylesheet against this package's components, deciding whether new CSS belongs in theme/ or shared/, or wiring a component's functional positioning under a strict CSP.
+description: @zanix/space-ui's headless styling architecture — className as the only styling prop, data-space-ui as a stable (not styling) selector hook, the theme/ vs shared/ starter templates, --space-* token composition, why BEM/Tachyons aren't part of this package, and the nonce prop Modal/Drawer/Toast/Tooltip/Popover/Combobox/Select/MultiSelect/DatePicker/RangeSlider accept to stay CSP-compliant (a component-rendered `<style nonce>` element plus, for Tooltip/Popover/Combobox/Select/MultiSelect/DatePicker/RangeSlider's own dynamic per-instance values, CSSOM rule mutation — never an inline style attribute or an external stylesheet). Use when adding data-space-ui to a new component, writing/reviewing an optional stylesheet against this package's components, deciding whether new CSS belongs in theme/ or shared/, or wiring a component's functional positioning under a strict CSP.
 ---
 
 File:line references point at `~/Documents/Development/ZanixLibraries/space-ui`
@@ -89,22 +89,26 @@ file, which is a regression, not a simplification.
 
 ## Functional positioning under a strict CSP: `nonce`
 
-`Modal`, `Drawer`, `Toast` (via `ToastProvider`), `Tooltip`, and `Popover`
-all need real `position`/`z-index` (plus a per-instance anchor) to function
-as an overlay at all — the same "functional, not decorative" exception
-above, not a headless regression. Applying that as an inline `style`
-attribute is a real, confirmed-in-browser violation of a nonce-based
-`style-src` CSP — `@zanix/space`'s own zero-config default is exactly this
-shape (`space-middleware-and-security`) — since a CSP nonce never applies to
-a `style="..."` attribute, only to a `<style>` element/`<link
-rel=stylesheet>`, and browsers block `element.style.setProperty(...)`/
+`Modal`, `Drawer`, `Toast` (via `ToastProvider`), `Tooltip`, `Popover`,
+`Combobox`, `Select`, `MultiSelect`, and `DatePicker` all need real
+`position`/`z-index` (plus a per-instance anchor) to function as an overlay
+at all — the same "functional, not decorative" exception above, not a
+headless regression. `RangeSlider` isn't an overlay, but needs the identical
+fix for the same underlying reason: its track/range/handle need real
+`position: relative`/`position: absolute` to lay out at all. Applying any of
+this as an inline `style` attribute is a real, confirmed-in-browser violation
+of a nonce-based `style-src` CSP — `@zanix/space`'s own zero-config default
+is exactly this shape (`space-middleware-and-security`) — since a CSP nonce
+never applies to a `style="..."` attribute, only to a `<style>` element/
+`<link rel=stylesheet>`, and browsers block `element.style.setProperty(...)`/
 `.style.cssText = ...` under the same rule too, so CSSOM-mutating an
 element's own inline style doesn't sidestep it either.
 
-All five components instead render their own `<style nonce={nonce}>`
-element, built once at module scope from the same style-object constants
-they always used (`MODAL_POSITION_STYLE`/`MODAL_Z_INDEX`/
-`DRAWER_SIDE_STYLE`/`DRAWER_Z_INDEX`/…), keyed off
+All ten components instead render their own `<style nonce={nonce}>` element,
+built once at module scope from the same style-object constants they always
+used (`MODAL_POSITION_STYLE`/`MODAL_Z_INDEX`/`DRAWER_SIDE_STYLE`/
+`DRAWER_Z_INDEX`/`TOOLTIP_POSITION_CSS`/`POPOVER_POSITION_CSS`/
+`SELECT_LISTBOX_POSITION_CSS`/`RANGE_SLIDER_POSITION_CSS`/…), keyed off
 `data-space-ui`/`data-position`/`data-side` attribute selectors instead of
 an inline attribute — this keeps "zero CSS import required" intact (the
 rule ships with the component, not an external stylesheet the consumer has
@@ -114,33 +118,45 @@ shared CSS-building helper, and each component's own `nonce?: string` prop
 doc for the per-component contract. A consumer under no strict CSP passes
 nothing — the `<style>` tag still applies exactly as before; a page under a
 strict nonce-based `style-src` (like `@zanix/space`'s own default) must
-thread its real per-request nonce down as this prop, or these five
-components' positioning silently fails to apply. There is no
+thread its real per-request nonce down as this prop, or the affected
+component's positioning silently fails to apply. There is no
 external-stylesheet alternative offered for this — moving it there would
 require every consumer to import an extra file just to get a working
-overlay, breaking headless-by-default for everyone, not just strict-CSP
+component, breaking headless-by-default for everyone, not just strict-CSP
 consumers.
 
-**`Tooltip`/`Popover`'s own genuinely dynamic positioning is covered too**,
-not just the static anchor: their panel's real offset — a `transform:
-translate(x, y)` (plus `visibility`/`pointer-events`) recomputed every
-render from a live `usePosition` measurement — can't be expressed as a
-static rule the way a fixed enum-keyed constant can, so it doesn't use
-`buildOverlayCss`. Instead it's applied to a CSSOM rule scoped to that one
-component instance (`[data-space-ui='tooltip'][data-tooltip-id='...']`),
+**Genuinely dynamic, per-instance values are covered too**, not just the
+static anchor. Six components share one mechanism for this via
+`overlay-position-css.ts`'s `getOrInsertDynamicRule`/`removeDynamicRule`:
+`Tooltip`, `Popover`, `Combobox`, `Select`, `MultiSelect`, and `DatePicker`
+each recompute their panel's real offset — a `transform: translate(x, y)`
+(plus `visibility`/`pointer-events`) — every render from a live `usePosition`
+measurement, which can't be expressed as a static rule the way a fixed
+enum-keyed constant can, so none of them use `buildOverlayCss` for this part.
+`RangeSlider` uses the identical `getOrInsertDynamicRule`/`removeDynamicRule`
+mechanism for a different kind of continuous value — its handle/fill
+`left`/`width`, mutated on every drag or keyboard update rather than on a
+`usePosition` measurement — the same "changes too often for a static rule"
+category, unlike `Avatar`/`ProgressBar`'s own rarely-changing values (each
+builds its own plain CSS text string fresh every render instead — neither
+uses `buildOverlayCss` or the CSSOM-mutation mechanism here at all, since
+their values don't need scroll/drag-frequency updates).
+
+In every case the value is applied to a CSSOM rule scoped to that one
+component instance (e.g. `[data-space-ui='tooltip'][data-tooltip-id='...']`),
 inserted once via `sheet.insertRule(...)` into the SAME `<style
-nonce={nonce}>` element already rendering the static rule, then mutated on
-every position update via `CSSStyleRule.style.setProperty(...)` — never
-`HTMLElement.style`, which is what `style-src-attr` actually covers. A CSP
-nonce authorizes the `<style>` ELEMENT itself once; CSSOM mutation of a rule
-already living inside that authorized element is a distinct code path from
-mutating an inline `style` attribute — the same technique CSP-compatible
-CSS-in-JS runtimes (styled-components' "speedy" mode, Emotion) use. Applies
-`useLayoutEffect` (not `useEffect`) so the mutation lands before paint, same
-as the synchronous inline-style update it replaces — a plain `useEffect`
-would cause a visible flicker/jump on every scroll-triggered position
-update, since `autoUpdate` re-measures continuously while open, not just on
-mount.
+nonce={nonce}>` element already rendering that component's static rule, then
+mutated via `CSSStyleRule.style.setProperty(...)` — never `HTMLElement.style`,
+which is what `style-src-attr` actually covers. A CSP nonce authorizes the
+`<style>` ELEMENT itself once; CSSOM mutation of a rule already living inside
+that authorized element is a distinct code path from mutating an inline
+`style` attribute — the same technique CSP-compatible CSS-in-JS runtimes
+(styled-components' "speedy" mode, Emotion) use. The `usePosition`-driven
+components apply the mutation inside `useLayoutEffect` (not `useEffect`) so
+it lands before paint, same as the synchronous inline-style update it
+replaces — a plain `useEffect` would cause a visible flicker/jump on every
+scroll-triggered position update, since `autoUpdate` re-measures continuously
+while open, not just on mount.
 
 Don't reach for `CatalogIcon`/any asset-backed styling mechanism to solve a
 problem like this one — the fix stays entirely self-contained (a

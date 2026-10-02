@@ -32,15 +32,16 @@ consumer, the same bar every primitive below was held to.
 
 | Primitive | Status | Real consumers |
 | --- | --- | --- |
-| `close-on-outside.ts`/`.preact.ts` (`useCloseOnOutside`) | Public | `Modal`, `Menu` ×2 |
-| `escape-to-close.ts` (`createEscapeToCloseHandler`) | Public | `Menu`'s toggle + each submenu item (2, byte-identical) — **not** `Modal`, whose own `Escape` handling is merged with `Tab`-cycling and doesn't do inline refocus; forcing it onto this shape would cost correctness for no real simplification |
+| `close-on-outside.ts`/`.preact.ts` (`useCloseOnOutside`) | Public | `Modal`, `Menu` ×2, `Drawer`, `DatePicker`, `Popover`, `Combobox`, `Select`, `MultiSelect` — every overlay-style component with a dismiss-on-outside-click contract calls this directly; `ConsentModal`/`NavDrawer` are NOT separate direct consumers — they inherit the behavior by composing `Modal`/`Drawer`/`Menu`, which already call it |
+| `escape-to-close.ts` (`createEscapeToCloseHandler`) | Public | `Menu`'s toggle + each submenu item (2, byte-identical), `DatePicker`, `Popover`, `Select` — **not** `Modal`, whose own `Escape` handling is merged with `Tab`-cycling and doesn't do inline refocus; forcing it onto this shape would cost correctness for no real simplification. Also not `Tooltip` (a document-level listener instead — see `Tooltip/render.ts`'s own doc) or `Combobox`/`MultiSelect` (`Escape` wired inline via the input's own `onKeyDown`, no separate refocus-target indirection needed) |
 | `shared/overlay-stack.ts` (`registerOverlay`/`isTopOverlay`) | Internal (not exported from `mod.ts`/`mod-preact.ts`) | `Modal`, `Drawer` — genuinely ONE shared stack, so a `Modal` and a `Drawer` open at once correctly defer to whichever is truly topmost, regardless of kind |
-| `focus-scope.ts`/`.preact.ts` (`useFocusScope`: capture → trap → restore) | Public | `Modal` (1 real consumer today — extracted ahead of `Drawer` per explicit decision not to gate foundation primitives on current consumer count once a near-term second one is known) |
-| `live-region.ts` (`liveRegionProps`, `VISUALLY_HIDDEN_STYLE`) | Public | `Slider` (1 real consumer — `Toast` composes `Alert` instead, since a toast is VISIBLE and this is for announcement-only regions, so it stays at 1) |
-| `roving-focus.ts` (`getNextRovingIndex`, `createRovingKeyDownHandler`) | Public | `RadioGroup`/`Tabs` (via `createRovingKeyDownHandler`, real focus moves) and `Combobox` (via `getNextRovingIndex` directly, `aria-activedescendant` — focus never leaves the input) — the split into two functions was anticipated for exactly this reason |
-| `positioning.ts` (`computePosition` — placement/offset/flip/shift, pure geometry) | Public, full engine (12 placements, collision detection, flip, shift) | `Popover`/`Tooltip`/`Combobox` (via `usePosition`) — built as the full engine ahead of its first consumers, a deliberate choice over a minimal version |
+| `shared/stable-comet-id.ts` (`deriveStableCometId`) | Internal (not exported from `mod.ts`/`mod-preact.ts`) | `Menu`, `Avatar`, `DatePicker`, `RangeSlider`, `ConsentModal` — a deterministic FNV-1a hash of a props-derived seed, for a component that must produce an id matching exactly between server render and client hydration but is architecturally required to stay `@zanix/space`-dependency-free, so it can't reach `@zanix/space`'s own `useCometStableId` (see `space-ui-component-patterns`'s render-prop-factory guidance for the two-alternative split) |
+| `focus-scope.ts`/`.preact.ts` (`useFocusScope`: capture → trap → restore) | Public | `Modal`, `Drawer` — both call it directly for their own focus trap; `Drawer` is the real second consumer the original extraction out of `Modal`'s own inline logic anticipated (see the extraction-criterion note above), not a hypothetical one anymore |
+| `live-region.ts` (`liveRegionProps`, `VISUALLY_HIDDEN_CSS`) | Public | `Slider`, `Countdown` (both call `liveRegionProps` directly for their own announcement region); `VisuallyHidden`/`MultiSelect` also render `VISUALLY_HIDDEN_CSS` directly (the shared clip-and-collapse rule, without going through `liveRegionProps` itself) — `Toast` composes `Alert` instead, since a toast is VISIBLE and this is for announcement-only regions |
+| `roving-focus.ts` (`getNextRovingIndex`, `createRovingKeyDownHandler`) | Public | `RadioGroup`/`Tabs` (via `createRovingKeyDownHandler`, real focus moves) and `Combobox`/`Select`/`MultiSelect` (via `getNextRovingIndex` directly, `aria-activedescendant` — focus never leaves the input/trigger) — the split into two functions was anticipated for exactly this reason |
+| `positioning.ts` (`computePosition` — placement/offset/flip/shift, pure geometry) | Public, full engine (12 placements, collision detection, flip, shift) | `Popover`/`Tooltip`/`Combobox`/`Select`/`MultiSelect`/`DatePicker` (via `usePosition`) — built as the full engine ahead of its first consumers, a deliberate choice over a minimal version |
 | `positioning-dom.ts` (`measurePosition`, `autoUpdate`) | Public | Real-element measurement (`getBoundingClientRect`/viewport/scroll-parent) and `ResizeObserver`+scroll/resize live updates |
-| `use-position.ts`/`.preact.ts` (`usePosition`) | Public | `Popover`/`Tooltip`/`Combobox` — SSR-safe (`null` until first client measurement, ref-gated) |
+| `use-position.ts`/`.preact.ts` (`usePosition`) | Public | `Popover`/`Tooltip`/`Combobox`/`Select`/`MultiSelect`/`DatePicker` — SSR-safe (`null` until first client measurement, ref-gated) |
 | Public `announce(message)` (app-level, component-independent) | Named, not adopted | No scenario has identified a real app-level (not component-owned) announcement need |
 
 ## Two sharp edges worth knowing before touching these
@@ -50,12 +51,13 @@ consumer, the same bar every primitive below was held to.
   `space-ui-component-patterns`'s "real bugs already found and fixed" for
   why (a real, confirmed infinite-render-loop bug), and for the general
   lesson it generalizes to for any new effect.
-- **`escape-to-close.ts` isn't a universal `Escape` handler** — it's
-  specifically shaped for `Menu`'s two real consumers. `Modal`'s own
-  `Escape` handling is deliberately separate because it's merged with
-  `Tab`-cycling in a way this primitive doesn't cover. Don't force a new
-  component's `Escape` handling onto this shape just because it exists;
-  confirm the shape actually matches before reusing it.
+- **`escape-to-close.ts` isn't a universal `Escape` handler** — it's shaped
+  for a trigger-plus-refocus-target contract (`Menu`, `DatePicker`, `Popover`,
+  `Select` all fit it). `Modal`'s own `Escape` handling is deliberately
+  separate because it's merged with `Tab`-cycling in a way this primitive
+  doesn't cover. Don't force a new component's `Escape` handling onto this
+  shape just because it exists; confirm the shape actually matches before
+  reusing it.
 - **`Button` is a plain function component, never `React.forwardRef`-wrapped
   — no new component composing it can get a real DOM ref to it directly.**
   This hits any component that composes `Button` as a trigger while also

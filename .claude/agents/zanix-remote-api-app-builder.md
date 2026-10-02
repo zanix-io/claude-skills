@@ -169,15 +169,20 @@ another dispatch of this agent.
      (`clients/hub-auth-client.ts`'s `createAdminHubAuthClient`,
      `auth/guards.ts`'s `requireAdminSession`) into this app's own tree and
      instantiate it there, rather than hand-designing this layer from
-     scratch — there is no installable `@zanix/console-kit` package to
-     depend on (an earlier extraction attempt was reverted once its
-     assumed second consumer never materialized; re-extracting it becomes
-     worth doing only once a second real, independent app actually needs
-     the identical shape — this app may be that second consumer, in which
-     case flag it back to whoever owns `console` rather than deciding to
-     re-extract unilaterally). Only hand-write the shapes below when the
-     backend genuinely isn't `@zanix/admin`-shaped (this auth layer is tied
-     to it — `ADMIN_HUB_BASE_URL`, `/admin/service-token`).
+     scratch — this auth-composition shape isn't in an installable package
+     yet. `@zanix/console` is being re-extracted into a real, importable
+     JSR package now that a second real, independent deployer of this
+     pattern (`aeratech-console`) has confirmed the trigger condition an
+     earlier, reverted `@zanix/console-kit` attempt was speculating about;
+     its current `exports` map covers `./core`/`./theme` only, not yet the
+     auth-composition layer, so still copy the modules above from
+     `console`'s own tree. If this new app turns out to be itself another
+     independent consumer of the identical shape, flag that to whoever owns
+     `console` too — more real consumers strengthens the case for finishing
+     that extraction, but deciding to re-extract unilaterally is still not
+     this agent's call. Only hand-write the shapes below when the backend
+     genuinely isn't `@zanix/admin`-shaped (this auth layer is tied to it —
+     `ADMIN_HUB_BASE_URL`, `/admin/service-token`).
    - **Does a human operator need to log into this app?** If yes, build the
      human-session half: `requireAdminSession` (copied from
      `@zanix/console`'s own `auth/guards.ts` — a thin re-export of
@@ -316,10 +321,16 @@ reading them.
   something this pattern needs, report it via `zanix-issue-reporting`
   (Bucket A, `--repo cli`) for `cli-generator-expert` to pick up — never
   build it here.
-- **Centralizing the resource-descriptor shape into a shared package.**
-  `zanix-remote-api-app-pattern`'s own scope explicitly keeps this
-  per-consumer until a second real, independent consumer needs the
-  identical shape — not a decision this agent revisits.
+- **Centralizing the resource-descriptor shape into a shared package
+  yourself.** `@zanix/console` is already being re-extracted into a real,
+  importable JSR package (`./core`/`./theme` are real today; the
+  resource-descriptor/hub-client-factory/auth-composition pieces aren't
+  yet) now that `aeratech-console` has confirmed
+  `zanix-remote-api-app-pattern`'s own second-consumer trigger condition —
+  but that extraction happens inside `@zanix/console`'s own repo, not as a
+  side effect of this agent scaffolding a new consumer app. Keep copying
+  whatever pieces `console`'s own `exports` map doesn't cover yet, per the
+  pattern skill's own layer sections — not a decision this agent revisits.
 - **Designing the backend-side API contract itself** (RTOs, controllers,
   Discovery, `ServiceRegistry`). That's `zanix-local-api-vs-aggregator`/
   `zanix-local-api-implementation`'s territory — this agent only ever
