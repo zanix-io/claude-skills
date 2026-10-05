@@ -172,7 +172,7 @@ another dispatch of this agent.
      scratch — this auth-composition shape isn't in an installable package
      yet. `@zanix/console` is being re-extracted into a real, importable
      JSR package now that a second real, independent deployer of this
-     pattern (`aeratech-console`) has confirmed the trigger condition an
+     pattern (`console`) has confirmed the trigger condition an
      earlier, reverted `@zanix/console-kit` attempt was speculating about;
      its current `exports` map covers `./core`/`./theme` only, not yet the
      auth-composition layer, so still copy the modules above from
@@ -325,7 +325,7 @@ reading them.
   yourself.** `@zanix/console` is already being re-extracted into a real,
   importable JSR package (`./core`/`./theme` are real today; the
   resource-descriptor/hub-client-factory/auth-composition pieces aren't
-  yet) now that `aeratech-console` has confirmed
+  yet) now that `console` has confirmed
   `zanix-remote-api-app-pattern`'s own second-consumer trigger condition —
   but that extraction happens inside `@zanix/console`'s own repo, not as a
   side effect of this agent scaffolding a new consumer app. Keep copying
